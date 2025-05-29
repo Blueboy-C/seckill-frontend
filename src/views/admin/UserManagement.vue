@@ -202,6 +202,8 @@ const form = ref({
   status: 1, // 默认状态为活跃
 });
 
+// 表单引用
+const formRef = ref(null); // 确保 formRef 被正确定义
 // 表单校验规则
 const formRules = {
   username: [
@@ -316,8 +318,9 @@ const submitForm = async () => {
     showForm.value = false;
     fetchUsers(); // 提交后刷新用户列表
   } catch (error) {
+    console.log(error);
     if (error !== 'cancel') {
-      ElMessage.error('提交表单失败');
+      // ElMessage.error('提交表单失败');
     }
   }
 };

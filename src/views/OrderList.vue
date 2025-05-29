@@ -22,67 +22,72 @@
           clearable
           class="status-select"
         >
-          <el-option label="待支付" :value="0" />
-          <el-option label="已支付" :value="1" />
-          <el-option label="已取消" :value="2" />
+          <el-option label="待支付" value="PENDING" />
+          <el-option label="已支付" value="PAID" />
+          <el-option label="已取消" value="CANCELLED" />
         </el-select>
         <el-button type="primary" @click="loadOrders" class="search-button">查询</el-button>
       </div>
 
       <!-- 订单列表 -->
-      <el-table :data="filteredOrders" class="order-table" stripe border>
-        <el-table-column prop="id" label="订单ID" width="100" />
-        <el-table-column prop="product.name" label="商品名称" width="200" />
-        <el-table-column prop="quantity" label="数量" width="100" />
-        <el-table-column prop="totalPrice" label="总价" width="120">
-          <template #default="{ row }">
-            {{ formatPrice(row.totalPrice) }}
-          </template>
-        </el-table-column>
-        <el-table-column label="状态" width="120">
-          <template #default="{ row }">
-            <el-tag :type="getStatusTagType(row.status)" class="status-tag">
-              {{ getStatusText(row.status) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="180">
-          <template #default="{ row }">
-            <el-dropdown trigger="click" placement="bottom-end">
-              <el-button type="primary" size="small" class="action-button">
-                操作<i class="el-icon-arrow-down el-icon--right"></i>
+      <div class="order-list">
+        <div v-for="order in filteredOrders" :key="order.id" class="order-item">
+          <div class="order-header">
+            <span class="order-id">订单号：{{ order.id }}</span>
+            <span class="order-status">
+              <el-tag :type="getStatusTagType(order.status)" class="status-tag">
+                {{ getStatusText(order.status) }}
+              </el-tag>
+            </span>
+          </div>
+          <div class="order-body">
+            <div class="product-info">
+              <el-image :src="order.productImage" class="product-image" fit="cover" />
+              <div class="product-details">
+                <h3 class="product-name">{{ order.productName }}</h3>
+                <p class="product-quantity">数量：{{ order.quantity }}</p>
+                <p class="product-price">总价：{{ formatPrice(order.totalPrice) }}</p>
+              </div>
+            </div>
+            <div class="order-actions">
+              <el-button type="primary" size="small" @click="viewOrderDetails(order)">查看详情</el-button>
+              <el-button
+                v-if="order.status === 'PENDING'"
+                type="success"
+                size="small"
+                @click="payOrder(order.id)"
+              >
+                支付
               </el-button>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item @click="viewOrderDetails(row)">查看详情</el-dropdown-item>
-                  <el-dropdown-item
-                    v-if="row.status === 0"
-                    @click="payOrder(row.id)"
-                  >
-                    支付
-                  </el-dropdown-item>
-                  <el-dropdown-item
-                    v-if="row.status === 0"
-                    @click="cancelOrder(row.id)"
-                  >
-                    取消订单
-                  </el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
-          </template>
-        </el-table-column>
-      </el-table>
+              <el-button
+                v-if="order.status === 'PENDING'"
+                type="danger"
+                size="small"
+                @click="cancelOrder(order.id)"
+              >
+                取消订单
+              </el-button>
+              <el-button
+                v-if="order.status !== 'PENDING'"
+                type="danger"
+                size="small"
+                @click="deleteOrder(order.id)"
+              >
+                删除订单
+              </el-button>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <!-- 订单详情对话框 -->
       <el-dialog v-model="dialogVisible" title="订单详情" width="50%" class="order-dialog">
         <div v-if="selectedOrder" class="order-details">
           <el-descriptions :column="1" border>
             <el-descriptions-item label="订单ID">{{ selectedOrder.id }}</el-descriptions-item>
-            <el-descriptions-item label="商品名称">{{ selectedOrder.product.name }}</el-descriptions-item>
-            <el-descriptions-item label="商品描述">{{ selectedOrder.product.description }}</el-descriptions-item>
+            <el-descriptions-item label="商品名称">{{ selectedOrder.productName }}</el-descriptions-item>
             <el-descriptions-item label="数量">{{ selectedOrder.quantity }}</el-descriptions-item>
-            <el-descriptions-item label="单价">{{ formatPrice(selectedOrder.product.price) }}</el-descriptions-item>
+            <el-descriptions-item label="单价">{{ formatPrice(selectedOrder.productPrice) }}</el-descriptions-item>
             <el-descriptions-item label="总价">{{ formatPrice(selectedOrder.totalPrice) }}</el-descriptions-item>
             <el-descriptions-item label="状态">
               <el-tag :type="getStatusTagType(selectedOrder.status)">
@@ -91,6 +96,12 @@
             </el-descriptions-item>
             <el-descriptions-item label="创建时间">{{ formatTime(selectedOrder.createTime) }}</el-descriptions-item>
             <el-descriptions-item label="更新时间">{{ formatTime(selectedOrder.updateTime) }}</el-descriptions-item>
+            <el-descriptions-item label="收货地址">
+              {{ selectedOrder.address.receiverRegion }} {{ selectedOrder.address.receiverAddress }}
+            </el-descriptions-item>
+            <el-descriptions-item label="收货人">
+              {{ selectedOrder.address.receiverName }} ({{ selectedOrder.address.receiverPhone }})
+            </el-descriptions-item>
           </el-descriptions>
         </div>
       </el-dialog>
@@ -101,8 +112,8 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue';
 import axios from '../utils/axios';
-import { useAuthStore } from '../stores/authStore';
 import { ElMessage, ElMessageBox } from 'element-plus';
+import { useAuthStore } from '../stores/authStore';
 
 const authStore = useAuthStore();
 const orders = ref([]);
@@ -129,7 +140,7 @@ const filteredOrders = computed(() => {
   return orders.value.filter((order) => {
     const matchesId = searchQuery.value.id ? order.id.toString().includes(searchQuery.value.id) : true;
     const matchesProductName = searchQuery.value.productName
-      ? order.product.name.includes(searchQuery.value.productName)
+      ? order.productName.includes(searchQuery.value.productName)
       : true;
     const matchesStatus = searchQuery.value.status !== null
       ? order.status === searchQuery.value.status
@@ -147,16 +158,20 @@ const viewOrderDetails = (order) => {
 // 取消订单
 const cancelOrder = async (orderId) => {
   try {
-    await ElMessageBox.confirm('确定要取消该订单吗？', '提示', {
-      type: 'warning',
-    });
-    await axios.put(`/order/update-status/${orderId}?status=2`, { status: 2 }); // 2 表示已取消
-    ElMessage.success('订单已取消');
+    await axios.put(`/order/cancel/${orderId}`);
     loadOrders();
   } catch (error) {
-    if (error !== 'cancel') {
-      ElMessage.error('取消订单失败');
-    }
+    console.error('取消订单失败:', error);
+  }
+};
+
+// 删除订单
+const deleteOrder = async (orderId) => {
+  try {
+    await axios.delete(`/order/${orderId}`);
+    loadOrders();
+  } catch (error) {
+    console.error('删除订单失败:', error);
   }
 };
 
@@ -166,7 +181,7 @@ const payOrder = async (orderId) => {
     await ElMessageBox.confirm('确定要支付该订单吗？', '提示', {
       type: 'warning',
     });
-    await axios.put(`/order/update-status/${orderId}?status=1`, { status: 1 }); // 1 表示已支付
+    await axios.put(`/order/update-status/${orderId}?status=PAID`);
     ElMessage.success('订单支付成功');
     loadOrders();
   } catch (error) {
@@ -179,11 +194,11 @@ const payOrder = async (orderId) => {
 // 获取状态标签类型
 const getStatusTagType = (status) => {
   switch (status) {
-    case 0:
+    case "PENDING":
       return 'warning'; // 待支付
-    case 1:
+    case "PAID":
       return 'success'; // 已支付
-    case 2:
+    case "CANCELLED":
       return 'danger'; // 已取消
     default:
       return 'info';
@@ -193,11 +208,11 @@ const getStatusTagType = (status) => {
 // 获取状态文本
 const getStatusText = (status) => {
   switch (status) {
-    case 0:
+    case "PENDING":
       return '待支付';
-    case 1:
+    case "PAID":
       return '已支付';
-    case 2:
+    case "CANCELLED":
       return '已取消';
     default:
       return '未知状态';
@@ -232,6 +247,7 @@ onMounted(() => {
   font-size: 24px;
   color: #333;
   margin-bottom: 20px;
+  text-align: center;
 }
 
 .order-card {
@@ -260,17 +276,77 @@ onMounted(() => {
   border-color: #409eff;
 }
 
-.order-table {
-  width: 100%;
-  margin-bottom: 20px;
+.order-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
 
-.status-tag {
+.order-item {
+  padding: 20px;
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+  background-color: #fff;
+  transition: box-shadow 0.3s ease;
+}
+
+.order-item:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.order-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.order-id {
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.order-status .status-tag {
   font-size: 14px;
 }
 
-.action-button {
+.order-body {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.product-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.product-image {
   width: 80px;
+  height: 80px;
+  border-radius: 8px;
+}
+
+.product-details {
+  flex: 1;
+}
+
+.product-name {
+  font-size: 16px;
+  font-weight: bold;
+  margin-bottom: 8px;
+}
+
+.product-quantity,
+.product-price {
+  font-size: 14px;
+  color: #666;
+}
+
+.order-actions {
+  display: flex;
+  gap: 10px;
 }
 
 .order-dialog {
@@ -284,5 +360,28 @@ onMounted(() => {
 .order-details p {
   margin: 10px 0;
   font-size: 16px;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .filter-container {
+    flex-direction: column;
+  }
+
+  .search-input,
+  .status-select {
+    width: 100%;
+  }
+
+  .order-body {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  .order-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
 }
 </style>

@@ -6,7 +6,7 @@
     <div class="search-container">
       <el-input
         v-model="searchQuery"
-        placeholder="请输入订单号、用户ID或商品ID搜索"
+        placeholder="请输入订单号、用户ID、商品ID或商品名称搜索"
         clearable
         @clear="fetchOrders"
         @keyup.enter="searchOrders"
@@ -18,6 +18,16 @@
       </el-input>
     </div>
 
+    <!-- 批量操作按钮 -->
+    <div class="batch-actions">
+      <el-button type="danger" @click="handleBatchDelete" :disabled="selectedOrders.length === 0">
+        批量删除
+      </el-button>
+      <el-button type="warning" @click="handleBatchCancel" :disabled="selectedOrders.length === 0">
+        批量取消
+      </el-button>
+    </div>
+
     <!-- 订单列表 -->
     <el-card class="order-table-card">
       <el-table
@@ -27,10 +37,13 @@
         max-height="500"
         stripe
         highlight-current-row
+        @selection-change="handleSelectionChange"
       >
+        <el-table-column type="selection" width="55" align="center" />
         <el-table-column prop="id" label="订单号" width="120" align="center" />
         <el-table-column prop="userId" label="用户ID" width="100" align="center" />
         <el-table-column prop="productId" label="商品ID" width="100" align="center" />
+        <el-table-column prop="productName" label="商品名称" width="150" align="center" />
         <el-table-column prop="quantity" label="数量" width="80" align="center" />
         <el-table-column prop="totalPrice" label="总价" width="120" align="center">
           <template #default="{ row }">
@@ -56,8 +69,24 @@
         </el-table-column>
         <el-table-column label="操作" width="180" align="center">
           <template #default="{ row }">
-            <el-button type="primary" size="small" @click="updateOrderStatus(row)">
-              更新状态
+            <el-button type="primary" size="small" @click="showOrderDetail(row)">
+              查看详情
+            </el-button>
+            <el-button
+              type="warning"
+              size="small"
+              @click="cancelOrder(row.id)"
+              :disabled="row.status === 'CANCELLED'"
+            >
+              取消订单
+            </el-button>
+            <el-button
+              type="danger"
+              size="small"
+              @click="deleteOrder(row.id)"
+              :disabled="row.status !== 'PAID'"
+            >
+              删除
             </el-button>
           </template>
         </el-table-column>
@@ -75,20 +104,28 @@
       />
     </el-card>
 
-    <!-- 更新订单状态弹窗 -->
-    <el-dialog v-model="showStatusDialog" title="更新订单状态" width="400px">
-      <el-form :model="statusForm" label-width="80px">
-        <el-form-item label="状态">
-          <el-select v-model="statusForm.status">
-            <el-option label="待支付" :value="0" />
-            <el-option label="已支付" :value="1" />
-            <el-option label="已取消" :value="2" />
-          </el-select>
-        </el-form-item>
-      </el-form>
+    <!-- 订单详情弹窗 -->
+    <el-dialog v-model="showDetailDialog" title="订单详情" width="600px">
+      <el-descriptions :column="1" border>
+        <el-descriptions-item label="订单号">{{ currentOrder.id }}</el-descriptions-item>
+        <el-descriptions-item label="用户ID">{{ currentOrder.userId }}</el-descriptions-item>
+        <el-descriptions-item label="商品ID">{{ currentOrder.productId }}</el-descriptions-item>
+        <el-descriptions-item label="商品名称">{{ currentOrder.productName }}</el-descriptions-item>
+        <el-descriptions-item label="数量">{{ currentOrder.quantity }}</el-descriptions-item>
+        <el-descriptions-item label="总价">{{ currentOrder.totalPrice.toFixed(2) }} 元</el-descriptions-item>
+        <el-descriptions-item label="状态">
+          <el-tag :type="getStatusTagType(currentOrder.status)">
+            {{ getStatusText(currentOrder.status) }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="创建时间">{{ formatDate(currentOrder.createTime) }}</el-descriptions-item>
+        <el-descriptions-item label="更新时间">{{ formatDate(currentOrder.updateTime) }}</el-descriptions-item>
+        <el-descriptions-item label="收货人">{{ currentOrder.address?.receiverName }}</el-descriptions-item>
+        <el-descriptions-item label="联系电话">{{ currentOrder.address?.receiverPhone }}</el-descriptions-item>
+        <el-descriptions-item label="收货地址">{{ currentOrder.address?.receiverRegion }} {{ currentOrder.address?.receiverAddress }}</el-descriptions-item>
+      </el-descriptions>
       <template #footer>
-        <el-button @click="showStatusDialog = false">取消</el-button>
-        <el-button type="primary" @click="submitStatusUpdate">确认</el-button>
+        <el-button @click="showDetailDialog = false">关闭</el-button>
       </template>
     </el-dialog>
   </div>
@@ -102,6 +139,9 @@ import instance from '@/utils/axios'; // 导入封装的 axios 实例
 // 订单列表
 const orders = ref([]);
 
+// 当前查看的订单
+const currentOrder = ref({});
+
 // 搜索查询
 const searchQuery = ref('');
 
@@ -112,14 +152,11 @@ const pagination = ref({
   total: 0, // 总记录数
 });
 
-// 更新订单状态弹窗显示状态
-const showStatusDialog = ref(false);
+// 订单详情弹窗显示状态
+const showDetailDialog = ref(false);
 
-// 更新订单状态表单
-const statusForm = ref({
-  id: null,
-  status: 0,
-});
+// 选中的订单
+const selectedOrders = ref([]);
 
 // 格式化日期
 const formatDate = (date) => {
@@ -129,11 +166,11 @@ const formatDate = (date) => {
 // 获取状态标签类型
 const getStatusTagType = (status) => {
   switch (status) {
-    case 0:
-      return 'info'; // 待支付
-    case 1:
+    case 'PENDING':
+      return 'warning'; // 待支付
+    case 'PAID':
       return 'success'; // 已支付
-    case 2:
+    case 'CANCELLED':
       return 'danger'; // 已取消
     default:
       return '';
@@ -143,11 +180,11 @@ const getStatusTagType = (status) => {
 // 获取状态文本
 const getStatusText = (status) => {
   switch (status) {
-    case 0:
+    case 'PENDING':
       return '待支付';
-    case 1:
+    case 'PAID':
       return '已支付';
-    case 2:
+    case 'CANCELLED':
       return '已取消';
     default:
       return '';
@@ -185,22 +222,57 @@ const searchOrders = async () => {
   }
 };
 
-// 打开更新订单状态弹窗
-const updateOrderStatus = (order) => {
-  statusForm.value.id = order.id;
-  statusForm.value.status = order.status;
-  showStatusDialog.value = true;
+// 查看订单详情
+const showOrderDetail = (order) => {
+  currentOrder.value = order;
+  showDetailDialog.value = true;
 };
 
-// 提交订单状态更新
-const submitStatusUpdate = async () => {
+// 取消订单
+const cancelOrder = async (orderId) => {
   try {
-    await instance.put(`/order/update-status/${statusForm.value.id}?status=${statusForm.value.status}`);
-    showStatusDialog.value = false;
-    fetchOrders(); // 更新后刷新订单列表
+    await instance.put(`/order/cancel/${orderId}`);
+    fetchOrders(); // 取消后刷新订单列表
   } catch (error) {
-    console.error('更新订单状态失败:', error);
+    console.error('取消订单失败:', error);
   }
+};
+
+// 删除订单
+const deleteOrder = async (orderId) => {
+  try {
+    await instance.delete(`/order/${orderId}`);
+    fetchOrders(); // 删除后刷新订单列表
+  } catch (error) {
+    console.error('删除订单失败:', error);
+  }
+};
+
+// 批量删除订单
+const handleBatchDelete = async () => {
+  try {
+    const orderIds = selectedOrders.value.map((order) => order.id);
+    await instance.post('/order/batch-delete', orderIds);
+    fetchOrders(); // 删除后刷新订单列表
+  } catch (error) {
+    console.error('批量删除订单失败:', error);
+  }
+};
+
+// 批量取消订单
+const handleBatchCancel = async () => {
+  try {
+    const orderIds = selectedOrders.value.map((order) => order.id);
+    await instance.post('/order/batch-cancel', { ids: orderIds });
+    fetchOrders(); // 取消后刷新订单列表
+  } catch (error) {
+    console.error('批量取消订单失败:', error);
+  }
+};
+
+// 处理表格多选
+const handleSelectionChange = (selection) => {
+  selectedOrders.value = selection;
 };
 
 // 组件挂载时获取订单列表
@@ -228,6 +300,10 @@ onMounted(() => {
 
 .search-input {
   width: 400px;
+}
+
+.batch-actions {
+  margin-bottom: 20px;
 }
 
 .order-table-card {

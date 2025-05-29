@@ -10,13 +10,13 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'), // 配置 @ 为 src 目录的别名
     },
   },
-  // server: {
-  //   proxy: {
-  //     '/api': {
-  //       target: 'http://localhost:8080', // 后端 API 地址
-  //       changeOrigin: true, // 允许跨域
-  //       rewrite: (path) => path.replace(/^\/api/, ''), // 去掉 /api 前缀
-  //     },
-  //   },
-  // },
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8080', // 后端 API 地址
+        changeOrigin: true, // 允许跨域
+        rewrite: (path) => path.replace(/^\/api/, ''), // 去掉 /api 前缀
+      },
+    },
+  },
 })

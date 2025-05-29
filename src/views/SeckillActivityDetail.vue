@@ -9,18 +9,17 @@
     <!-- 活动详情卡片 -->
     <el-card class="activity-card">
       <div class="activity-detail">
-        <!-- 活动图片占位符 -->
-        <div class="activity-image-placeholder">
-          <img
-            v-if="true"
-            :src="imageList[Math.floor(Math.random() * imageList.length)]"
-            alt="商品图片"
-            class="product-image"
-          />
+        <!-- 图片区域（左） -->
+        <div class="activity-image">
+          <el-carousel v-if="activity.product && activity.product.imageList.length > 0" :interval="3000" arrow="always">
+            <el-carousel-item v-for="(image, index) in activity.product.imageList" :key="index">
+              <img :src="image.imageUrl" alt="商品图片" class="product-image" />
+            </el-carousel-item>
+          </el-carousel>
           <div v-else class="image-placeholder">暂无图片</div>
         </div>
 
-        <!-- 活动信息 -->
+        <!-- 活动信息区域（中） -->
         <div class="activity-info">
           <h2 class="activity-name">{{ activity.name }}</h2>
           <p class="activity-description">{{ activity.description || '暂无描述' }}</p>
@@ -28,21 +27,41 @@
             <p class="time">开始时间: {{ formatTime(activity.startTime) }}</p>
             <p class="time">结束时间: {{ formatTime(activity.endTime) }}</p>
             <p class="stock">库存: {{ activity.stock }}</p>
-            <p class="status" :class="getStatusClass(activity.status)">
-              状态: {{ getStatusText(activity.status) }}
+            <p class="status" :class="getStatusClass(getActivityStatus(activity))">
+              状态: {{ getActivityStatus(activity) }}
             </p>
-            <p v-if="countdown" class="countdown">结束倒计时: <span class="countdown-time">{{ countdown }}</span></p>
+            <!-- 倒计时 -->
+            <p v-if="getActivityStatus(activity) === '进行中'" class="countdown">
+              结束倒计时: <span class="countdown-time">{{ countdown }}</span>
+            </p>
+            <p v-else-if="getActivityStatus(activity) === '未开始'" class="countdown">
+              距离开始: <span class="countdown-time">{{ countdown }}</span>
+            </p>
           </div>
+        </div>
 
+        <!-- 价格和抢购按钮区域（右） -->
+        <div class="price-action-section">
+          <!-- 价格 -->
+          <div class="price-section">
+            <!-- <p class="price-label">秒杀价</p> -->
+            <p class="price-value">{{ formatPrice(activity.product?.price) }}</p>
+          </div>
           <!-- 抢购按钮 -->
-          <el-button
-            type="danger"
-            :disabled="activity.status !== 1 || activity.stock <= 0"
-            @click="participateSeckill"
-            class="seckill-button"
-          >
-            立即抢购
-          </el-button>
+          <div class="action-section">
+            <el-button
+              type="danger"
+              :disabled="getActivityStatus(activity) !== '进行中' || activity.stock <= 0 || !selectedAddress"
+              @click="participateSeckill"
+              class="seckill-button"
+            >
+              立即抢购
+            </el-button>
+            <!-- 收货地址选择 -->
+            <el-button type="text" @click="openAddressDialog">
+              {{ selectedAddress ? `收货地址: ${selectedAddress.receiverAddress}` : '选择收货地址' }}
+            </el-button>
+          </div>
         </div>
       </div>
     </el-card>
@@ -51,17 +70,6 @@
     <el-card class="product-card" v-if="activity.product">
       <h3 class="product-title">商品信息</h3>
       <div class="product-detail">
-        <!-- 商品图片占位符 -->
-        <div class="product-image-placeholder">
-          <img
-            v-if="true"
-            :src="imageList[Math.floor(Math.random() * imageList.length)]"
-            alt="商品图片"
-            class="product-image"
-          />
-          <div v-else class="image-placeholder">暂无图片</div>
-        </div>
-
         <!-- 商品信息 -->
         <div class="product-info">
           <el-descriptions :column="1" border>
@@ -81,6 +89,20 @@
         </div>
       </div>
     </el-card>
+
+    <!-- 收货地址选择弹窗 -->
+    <el-dialog v-model="addressDialogVisible" title="选择收货地址" width="50%">
+      <el-table :data="addressList" @row-click="selectAddress">
+        <el-table-column prop="receiverName" label="收货人" width="120" />
+        <el-table-column prop="receiverPhone" label="联系电话" width="150" />
+        <el-table-column prop="receiverAddress" label="收货地址" />
+        <el-table-column label="操作" width="100">
+          <template #default="{ row }">
+            <el-button type="text" @click="setDefaultAddress(row.id)">设为默认</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
   </div>
 </template>
 
@@ -93,29 +115,19 @@ import { useAuthStore } from '../stores/authStore';
 
 const authStore = useAuthStore();
 const activity = ref({}); // 活动详情
-const countdown = ref(''); // 结束倒计时
+const countdown = ref(''); // 倒计时
 const route = useRoute();
 const router = useRouter();
 let timer = null; // 定时器
 
-const imageList =[
-  "https://img.zcool.cn/community/01d5615abc9301a8012062e38ca89c.JPG?x-oss-process=image/auto-orient,1/resize,m_lfit,w_1280,limit_1/sharpen,100/quality,q_100",
-  "https://img.zcool.cn/community/01d5615abc9301a8012062e38ca89c.JPG?x-oss-process=image/auto-orient,1/resize,m_lfit,w_1280,limit_1/sharpen,100/quality,q_100",
-  "https://tse1-mm.cn.bing.net/th/id/OIP-C.i3aj4AAmlwyUCeNpZjnvOAHaE8?rs=1&pid=ImgDetMain",
-  "https://img95.699pic.com/photo/50018/0189.jpg_wh860.jpg",
-  "https://img95.699pic.com/photo/60015/8957.jpg_wh860.jpg",
-  "https://tse1-mm.cn.bing.net/th/id/OIP-C.3hBgFtrc4-d0daxwmH7cnwHaE8?rs=1&pid=ImgDetMain",
-  "https://ts1.cn.mm.bing.net/th/id/R-C.30e8a422ed0531c065614f57b3ec00c7?rik=prPBQ%2bH8HHA6tg&riu=http%3a%2f%2fseopic.699pic.com%2fphoto%2f50105%2f8519.jpg_wh1200.jpg&ehk=nZWSnJtQiDQlJ7orUunPGwc7rc89n7L03b6YDYCpiFI%3d&risl=&pid=ImgRaw&r=0",
-  "https://img.zcool.cn/community/0103d65afaf2d2a80121604517b881.jpg?x-oss-process=image/auto-orient,1/resize,m_lfit,w_1280,limit_1/sharpen,100",
-  "https://ts1.cn.mm.bing.net/th/id/R-C.ea214c6bd697f499d917f86c9de53c56?rik=o33lqLaAKmrxMg&riu=http%3a%2f%2fp7.zbjimg.com%2fservice%2f2015-11%2f30%2fservice%2f565c164e15dd2.jpg&ehk=mVqsmAQPLS2fy1gbdfiML24rLDEbVL7KSW53DDhI%2bVI%3d&risl=&pid=ImgRaw&r=0",
-  "https://pic.nximg.cn/file/20220608/27797488_120921621109_2.jpg",
-  "https://tse3-mm.cn.bing.net/th/id/OIP-C.T8szPQWoyzuppclnXhVfcAHaE7?rs=1&pid=ImgDetMain"
-]
+const addressDialogVisible = ref(false); // 地址选择弹窗
+const addressList = ref([]); // 收货地址列表
+const selectedAddress = ref(null); // 选中的收货地址
 
 // 加载活动详情
 const loadActivity = async () => {
   try {
-    const response = await axios.get(`/admin/seckill-activities/${route.params.id}`);
+    const response = await axios.get(`/seckill-activities/${route.params.id}`);
     activity.value = response.data;
     startCountdown(); // 启动倒计时
   } catch (error) {
@@ -123,23 +135,79 @@ const loadActivity = async () => {
   }
 };
 
+// 加载收货地址列表
+const loadAddressList = async () => {
+  try {
+    const response = await axios.get('/user/address/list', {
+      params: { userId: authStore.getUserId() },
+    });
+    addressList.value = response;
+    // 设置默认地址
+    const defaultAddress = addressList.value.find((addr) => addr.isDefault);
+    if (defaultAddress) {
+      selectedAddress.value = defaultAddress;
+    }
+  } catch (error) {
+    ElMessage.error('加载收货地址失败');
+  }
+};
+
+// 打开地址选择弹窗
+const openAddressDialog = () => {
+  addressDialogVisible.value = true;
+};
+
+// 选择地址
+const selectAddress = (address) => {
+  selectedAddress.value = address;
+  addressDialogVisible.value = false;
+};
+
+// 设置默认地址
+const setDefaultAddress = async (addressId) => {
+  try {
+    await axios.post('/user/address/setDefault', {
+      userId: authStore.getUserId(),
+      addressId,
+    });
+    ElMessage.success('设置默认地址成功');
+    loadAddressList(); // 重新加载地址列表
+  } catch (error) {
+    ElMessage.error('设置默认地址失败');
+  }
+};
+
 // 抢购功能
 const participateSeckill = async () => {
+  if (!selectedAddress.value) {
+    ElMessage.warning('请先选择收货地址');
+    return;
+  }
+
   try {
     const userId = authStore.getUserId();
     const seckillActivityId = activity.value.id;
-    const totalPrice = 1;
-    const response = await axios.post('/seckill/participate', null, {
-      params: {
-        userId,
-        seckillActivityId,
-        totalPrice,
-      },
-    });
-    if (response === '秒杀成功') {
+    const totalPrice = activity.value.product.price; // 使用商品价格作为总价
+    const productName = activity.value.product.name; // 商品名称
+    const productPrice = activity.value.product.price; // 商品价格
+    const addressId = selectedAddress.value.id; // 选中的地址ID
+    const activityName = activity.value.name;
+
+    const seckillOrder = {
+      userId,
+      seckillActivityId,
+      totalPrice,
+      productName,
+      productPrice,
+      addressId,
+      activityName,
+    };
+
+    const response = await axios.post('/seckill/participate', seckillOrder);
+    if (response.data === '秒杀成功') {
       ElMessage.success('抢购成功！');
       activity.value.stock -= 1; // 更新库存
-      router.push('/seckillOder'); // 跳转到订单页面
+      router.push('/seckillOrder'); // 跳转到订单页面
     } else {
       ElMessage.error('你已经抢购过了');
     }
@@ -156,31 +224,36 @@ const formatTime = (time) => {
 
 // 格式化价格
 const formatPrice = (price) => {
+    if (price === undefined || price === null) {
+    return '¥0.00'; // 如果价格不存在，返回默认值
+  }
+  return `¥${price.toFixed(2)}`; // 正常格式化价格
   return `¥${price.toFixed(2)}`;
 };
 
-// 获取活动状态文本
-const getStatusText = (status) => {
-  switch (status) {
-    case 0:
-      return '未开始';
-    case 1:
-      return '进行中';
-    case 2:
-      return '已结束';
-    default:
-      return '未知状态';
+// 获取活动状态
+const getActivityStatus = (activity) => {
+  const now = new Date().getTime();
+  const startTime = new Date(activity.startTime).getTime();
+  const endTime = new Date(activity.endTime).getTime();
+
+  if (now < startTime) {
+    return '未开始';
+  } else if (now >= startTime && now <= endTime) {
+    return '进行中';
+  } else {
+    return '已结束';
   }
 };
 
 // 获取活动状态类名
 const getStatusClass = (status) => {
   switch (status) {
-    case 0:
+    case '未开始':
       return 'status-not-started';
-    case 1:
+    case '进行中':
       return 'status-in-progress';
-    case 2:
+    case '已结束':
       return 'status-ended';
     default:
       return '';
@@ -189,27 +262,35 @@ const getStatusClass = (status) => {
 
 // 计算倒计时
 const startCountdown = () => {
+  const now = new Date().getTime();
+  const startTime = new Date(activity.value.startTime).getTime();
   const endTime = new Date(activity.value.endTime).getTime();
-  timer = setInterval(() => {
-    const now = new Date().getTime();
-    const distance = endTime - now;
 
-    if (distance <= 0) {
+  timer = setInterval(() => {
+    const currentTime = new Date().getTime();
+    let distance;
+
+    if (currentTime < startTime) {
+      distance = startTime - currentTime; // 距离开始时间
+    } else if (currentTime >= startTime && currentTime <= endTime) {
+      distance = endTime - currentTime; // 距离结束时间
+    } else {
       clearInterval(timer);
       countdown.value = '活动已结束';
-      activity.value.status = 2; // 更新活动状态为已结束
-    } else {
-      const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-      const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
-      const seconds = Math.floor((distance % (1000 * 60)) / 1000);
-      countdown.value = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+      return;
     }
+
+    const hours = Math.floor(distance / (1000 * 60 * 60));
+    const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+    countdown.value = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
   }, 1000);
 };
 
 // 初始化加载
 onMounted(() => {
   loadActivity();
+  loadAddressList();
 });
 
 // 组件卸载时清除定时器
@@ -221,16 +302,26 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+:root {
+  --primary-color: red; /* 主色调：红色 */
+  --secondary-color: #ff7a45; /* 辅色调：橙色 */
+  --background-color: #f8f8f8; /* 背景色 */
+  --text-color: #333; /* 文字颜色 */
+  --text-secondary-color: #666; /* 次要文字颜色 */
+  --border-color: #e8e8e8; /* 边框颜色 */
+  --shadow-color: rgba(0, 0, 0, 0.1); /* 阴影颜色 */
+}
+
 .seckill-activity-detail {
-  padding: 40px;
-  background-color: #f4f4f4;
+  padding: 24px;
+  background-color: var(--background-color);
 }
 
 .page-title {
   text-align: center;
   font-size: 36px;
-  color: #ff4d4f;
-  margin-bottom: 30px;
+  color: var(--primary-color);
+  margin-bottom: 24px;
   position: relative;
 }
 
@@ -243,7 +334,7 @@ onUnmounted(() => {
   display: inline-block;
   margin-left: 10px;
   font-size: 24px;
-  color: #ff4d4f;
+  color: red;
   animation: flash 1s infinite alternate;
 }
 
@@ -256,165 +347,229 @@ onUnmounted(() => {
   }
 }
 
-.activity-card,
-.product-card {
-  margin-bottom: 30px;
-  background-color: #fff;
-  border-radius: 10px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15);
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
-}
+.activity-card {
+  margin-bottom: 24px;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px var(--shadow-color);
+  background: linear-gradient(135deg, #fff, var(--background-color));
 
-.activity-card:hover,
-.product-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 10px 20px rgba(255, 77, 79, 0.2);
 }
 
 .activity-detail {
   display: flex;
-  gap: 30px;
-  padding: 30px;
+  gap: 24px;
+  padding: 24px;
 }
 
-.activity-image-placeholder,
-.product-image-placeholder {
-  width: 350px;
-  height: 230px;
-  background-color: #e9e9e9;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 10px;
+.activity-image {
+  flex: 1;
+  max-width: 500px; /* 固定图片区域宽度 */
+  border-radius: 8px;
   overflow: hidden;
 }
 
 .product-image {
   width: 100%;
-  height: 100%;
-  object-fit: cover;
+  height: auto;
+  border-radius: 8px;
+  transition: transform 0.3s ease;
+}
+
+.product-image:hover {
+  transform: scale(1.05);
+}
+
+.image-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 300px;
+  background-color: #f8f8f8;
+  border: 1px dashed var(--border-color);
+  color: var(--text-secondary-color);
 }
 
 .activity-info {
-  flex: 1;
+  flex: 2;
+  max-width: 400px; /* 固定活动信息区域宽度 */
 }
 
 .activity-name {
-  font-size: 28px;
-  color: #2c3e50;
-  margin-bottom: 15px;
-  font-weight: bold;
+  font-size: 24px;
+  color: var(--text-color);
+  margin-bottom: 12px;
 }
 
 .activity-description {
-  color: #666;
-  margin-bottom: 25px;
-  line-height: 1.6;
+  font-size: 14px;
+  color: var(--text-secondary-color);
+  margin-bottom: 20px;
 }
 
-.activity-meta p {
-  margin: 12px 0;
-  font-size: 18px;
+.activity-meta {
+  margin-bottom: 20px;
 }
 
-.time {
-  color: #666;
-}
-
-.stock {
-  color: #f56c6c;
-  font-weight: bold;
-}
-
+.time,
+.stock,
 .status {
-  font-weight: bold;
-}
-
-.status-not-started {
-  color: #999;
-}
-
-.status-in-progress {
-  color: #409eff;
-}
-
-.status-ended {
-  color: #f5222d;
+  font-size: 14px;
+  color: var(--text-secondary-color);
+  margin-bottom: 10px;
 }
 
 .countdown {
-  color: #ff4d4f;
-  font-size: 20px;
+  font-size: 22px;
+  color: red; /* 倒计时文字颜色改为红色 */
   font-weight: bold;
-  margin-top: 15px;
+  margin-bottom: 20px;
 }
 
 .countdown-time {
+  font-size: 25px;
+  font-weight: bold;
+  color: var(--primary-color); /* 倒计时文字颜色改为红色 */
   animation: pulse 1s infinite;
 }
 
 @keyframes pulse {
   0% {
-    transform: scale(1);
+    opacity: 1;
   }
   50% {
-    transform: scale(1.1);
+    opacity: 0.5;
   }
   100% {
-    transform: scale(1);
+    opacity: 1;
   }
+}
+
+.price-action-section {
+
+  max-width: 200px; /* 减少右侧区域宽度，使其更靠近中间 */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px; /* 减少内部间距 */
+
+}
+
+.price-section {
+  text-align: center;
+  padding:20px;
+  border-radius: 8px;
+  border: 1px solid var(--primary-color);
+  box-shadow: 0 2px 8px rgba(255, 77, 79, 0.1);
+  width: 100%;
+}
+
+.price-label {
+  font-size: 20px;
+  color: var(--text-secondary-color);
+  margin-bottom: 8px;
+}
+
+.price-value {
+  font-size: 60px;
+  font-weight: bold;
+  color: red;
+  animation: pulse 1s infinite;
+}
+
+.action-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
 }
 
 .seckill-button {
   width: 100%;
-  margin-top: 25px;
-  background-color: #ff4d4f;
-  border-color: #ff4d4f;
-  font-size: 20px;
-  padding: 12px 20px;
-  border-radius: 8px;
-  transition: background-color 0.3s ease;
+  font-weight: bold;
+  color: black; /* 按钮文字颜色为黑色 */
+  transition: all 0.3s ease;
+  animation: shake 1s infinite;
 }
 
 .seckill-button:hover {
-  background-color: #f5222d;
+  background-color: var(--secondary-color);
+  border-color: var(--secondary-color);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(255, 77, 79, 0.3);
+}
+
+@keyframes shake {
+  0% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-5px);
+  }
+  50% {
+    transform: translateX(5px);
+  }
+  75% {
+    transform: translateX(-5px);
+  }
+  100% {
+    transform: translateX(0);
+  }
 }
 
 .product-card {
-  padding: 30px;
+  margin-bottom: 20px;
 }
 
 .product-title {
-  font-size: 24px;
-  color: #333;
-  margin-bottom: 25px;
-  font-weight: bold;
+  font-size: 20px;
+  color: var(--text-color);
+  margin-bottom: 20px;
 }
 
 .product-detail {
   display: flex;
-  gap: 30px;
+  gap: 20px;
+  padding: 20px;
 }
 
 .product-info {
-  flex: 1;
+  flex: 2;
 }
 
 .el-descriptions {
-  border: 1px solid #dcdfe6;
+  width: 100%;
 }
 
 .el-descriptions-item {
-  font-size: 16px;
-  line-height: 1.8;
+  padding: 10px 0;
 }
 
 .el-descriptions-item__label {
   font-weight: bold;
-  color: #606266;
+  color: var(--text-color);
 }
 
 .el-descriptions-item__content {
-  color: #909399;
+  color: var(--text-secondary-color);
 }
-</style> 
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .activity-detail {
+    flex-direction: column;
+  }
+
+  .activity-image {
+    max-width: 100%;
+  }
+
+  .page-title {
+    font-size: 28px;
+  }
+
+  .title-flash {
+    font-size: 18px;
+  }
+}
+</style>

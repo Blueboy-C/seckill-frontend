@@ -30,7 +30,7 @@
       >
         <el-table-column prop="id" label="ID" width="80" align="center" />
         <el-table-column prop="name" label="活动名称" />
-        <el-table-column prop="productId" label="商品ID" width="100" align="center" />
+        <el-table-column prop="product.name" label="商品名称" />
         <el-table-column prop="startTime" label="开始时间" width="180">
           <template #default="{ row }">
             {{ formatDate(row.startTime) }}
@@ -68,7 +68,7 @@
         :total="pagination.total"
         layout="total, sizes, prev, pager, next, jumper"
         @current-change="fetchSeckillActivities"
-        @size-change="fetchSeckillActivities"
+        @size-change="handlePageSizeChange"
         class="pagination"
       />
     </el-card>
@@ -83,8 +83,22 @@
         <el-form-item label="活动名称" required>
           <el-input v-model="form.name" />
         </el-form-item>
-        <el-form-item label="商品ID" required>
-          <el-input v-model.number="form.productId" type="number" />
+        <el-form-item label="商品" required>
+          <el-select
+            v-model="form.productId"
+            placeholder="请选择商品"
+            filterable
+            remote
+            :remote-method="searchProducts"
+            :loading="isLoadingProducts"
+          >
+            <el-option
+              v-for="product in products"
+              :key="product.id"
+              :label="product.name"
+              :value="product.id"
+            />
+          </el-select>
         </el-form-item>
         <el-form-item label="开始时间" required>
           <el-date-picker
@@ -129,7 +143,7 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import { Search } from '@element-plus/icons-vue';
-import instance from '@/utils/axios'; // 导入封装的 axios 实例
+import axios from '@/utils/axios';
 
 // 秒杀活动列表
 const seckillActivities = ref([]);
@@ -160,6 +174,12 @@ const form = ref({
   stock: 0,
   status: 0, // 0:未开始, 1:进行中, 2:已结束
 });
+
+// 商品列表
+const products = ref([]);
+
+// 是否正在加载商品
+const isLoadingProducts = ref(false);
 
 // 格式化日期
 const formatDate = (date) => {
@@ -197,7 +217,7 @@ const getStatusText = (status) => {
 // 获取秒杀活动列表
 const fetchSeckillActivities = async () => {
   try {
-    const response = await instance.get('/admin/seckill-activities/page', {
+    const response = await axios.get('/seckill-activities/page', {
       params: {
         pageNum: pagination.value.pageNum,
         pageSize: pagination.value.pageSize,
@@ -213,7 +233,7 @@ const fetchSeckillActivities = async () => {
 // 搜索秒杀活动
 const searchSeckillActivities = async () => {
   try {
-    const response = await instance.get('/admin/seckill-activities/search', {
+    const response = await axios.get('/seckill-activities/search', {
       params: {
         name: searchQuery.value,
       },
@@ -226,10 +246,23 @@ const searchSeckillActivities = async () => {
 };
 
 // 新增秒杀活动
-const addSeckillActivity = () => {
+const addSeckillActivity = async () => {
   showForm.value = true;
   isEditing.value = false;
   resetForm();
+
+  // 加载商品数据
+  try {
+    const response = await axios.get('/products/search', {
+      params: {
+        pageNum: 1,
+        pageSize: 10,
+      },
+    });
+    products.value = response.data.data; // 假设接口返回的数据结构为 { data: [...] }
+  } catch (error) {
+    console.error('加载商品数据失败:', error);
+  }
 };
 
 // 编辑秒杀活动
@@ -242,7 +275,7 @@ const editSeckillActivity = (activity) => {
 // 删除秒杀活动
 const deleteSeckillActivity = async (id) => {
   try {
-    await instance.delete(`/admin/seckill-activities/${id}`);
+    await axios.delete(`/seckill-activities/${id}`);
     fetchSeckillActivities(); // 删除后刷新列表
   } catch (error) {
     console.error('删除秒杀活动失败:', error);
@@ -253,9 +286,9 @@ const deleteSeckillActivity = async (id) => {
 const submitForm = async () => {
   try {
     if (isEditing.value) {
-      await instance.put(`/admin/seckill-activities/${form.value.id}`, form.value);
+      await axios.put(`/seckill-activities/${form.value.id}`, form.value);
     } else {
-      await instance.post('/admin/seckill-activities', form.value);
+      await axios.post('/seckill-activities', form.value);
     }
     showForm.value = false;
     fetchSeckillActivities(); // 提交后刷新列表
@@ -281,6 +314,12 @@ const resetForm = () => {
     stock: 0,
     status: 0,
   };
+};
+
+// 分页大小变化
+const handlePageSizeChange = (pageSize) => {
+  pagination.value.pageSize = pageSize;
+  fetchSeckillActivities();
 };
 
 // 组件挂载时获取秒杀活动列表

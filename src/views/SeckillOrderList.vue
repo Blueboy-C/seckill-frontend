@@ -18,66 +18,67 @@
           @change="loadOrders"
           class="status-select"
         >
-          <el-option label="待支付" :value="0" />
-          <el-option label="已支付" :value="1" />
-          <el-option label="已取消" :value="2" />
+          <el-option label="待支付" value="PENDING" />
+          <el-option label="已支付" value="PAID" />
+          <el-option label="已取消" value="CANCELLED" />
         </el-select>
         <el-button type="primary" @click="loadOrders" class="search-button">搜索</el-button>
       </div>
 
       <!-- 订单列表 -->
-      <el-table :data="orders" class="order-table" stripe border>
-        <el-table-column prop="id" label="订单ID" width="100" />
-        <el-table-column prop="seckillActivity.name" label="活动名称" width="150" />
-        <el-table-column prop="seckillActivity.product.name" label="商品名称" width="150" />
-        <el-table-column prop="totalPrice" label="总价格" width="120">
-          <template #default="{ row }">
-            {{ formatPrice(row.totalPrice) }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="status" label="状态" width="120">
-          <template #default="{ row }">
-            <el-tag :type="getStatusTagType(row.status)" class="status-tag">
-              {{ getStatusText(row.status) }}
+      <div class="order-list">
+        <div v-for="order in orders" :key="order.id" class="order-item">
+          <div class="order-header">
+            <span class="order-id">订单号：{{ order.id }}</span>
+            <el-tag :type="getStatusTagType(order.status)" class="status-tag">
+              {{ getStatusText(order.status) }}
             </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="剩余支付时间" width="180">
-          <template #default="{ row }">
-            <div v-if="row.status === 0" class="countdown">
-              {{ calculateCountdown(row.endTime || getDefaultEndTime(row.createTime)) }}
+          </div>
+          <div class="order-body">
+            <div class="product-info">
+              <el-image :src="order.productImage" class="product-image" fit="cover" />
+              <div class="product-details">
+                <h3 class="product-name">{{ order.productName }}</h3>
+                <p class="activity-name">活动名称：{{ order.activityNameName }}</p>
+                <p class="total-price">总价：{{ formatPrice(order.totalPrice) }}</p>
+              </div>
             </div>
-            <div v-else>—</div>
-          </template>
-        </el-table-column>
-        <el-table-column prop="createTime" label="创建时间" width="180">
-          <template #default="{ row }">
-            {{ formatTime(row.createTime) }}
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="200">
-          <template #default="{ row }">
-            <el-button
-              v-if="row.status === 0"
-              type="success"
-              size="small"
-              @click="payOrder(row.id)"
-              class="action-button"
-            >
-              支付
-            </el-button>
-            <el-button
-              v-if="row.status === 0"
-              type="danger"
-              size="small"
-              @click="cancelOrder(row.id)"
-              class="action-button"
-            >
-              取消
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+            <div class="order-actions">
+              <div v-if="order.status === 'PENDING'" class="countdown">
+                剩余支付时间：{{ calculateCountdown(order.payExpireTime) }}
+              </div>
+              <div class="buttons">
+                <el-button
+                  v-if="order.status === 'PENDING'"
+                  type="success"
+                  size="small"
+                  @click="payOrder(order.id)"
+                  class="action-button"
+                >
+                  支付
+                </el-button>
+                <el-button
+                  v-if="order.status === 'PENDING'"
+                  type="danger"
+                  size="small"
+                  @click="cancelOrder(order.id)"
+                  class="action-button"
+                >
+                  取消
+                </el-button>
+                <el-button
+                  type="primary"
+                  size="small"
+                  @click="showOrderDetail(order)"
+                  class="action-button"
+                >
+                  查看详情
+                </el-button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <!-- 分页 -->
       <el-pagination
@@ -90,11 +91,34 @@
         @current-change="handlePageChange"
       />
     </el-card>
+
+    <!-- 订单详情弹窗 -->
+    <el-dialog v-model="detailVisible" title="订单详情" width="600px">
+      <el-descriptions :column="1" border>
+        <el-descriptions-item label="订单ID">{{ currentOrder.id }}</el-descriptions-item>
+        <el-descriptions-item label="活动名称">{{ currentOrder.activityNameName }}</el-descriptions-item>
+        <el-descriptions-item label="商品名称">{{ currentOrder.productName }}</el-descriptions-item>
+        <el-descriptions-item label="总价格">{{ formatPrice(currentOrder.totalPrice) }}</el-descriptions-item>
+        <el-descriptions-item label="状态">
+          <el-tag :type="getStatusTagType(currentOrder.status)">
+            {{ getStatusText(currentOrder.status) }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="创建时间">{{ formatTime(currentOrder.createTime) }}</el-descriptions-item>
+        <el-descriptions-item label="支付截止时间">{{ formatTime(currentOrder.payExpireTime) }}</el-descriptions-item>
+        <el-descriptions-item label="收货人">{{ currentOrder.address.receiverName }}</el-descriptions-item>
+        <el-descriptions-item label="联系电话">{{ currentOrder.address.receiverPhone }}</el-descriptions-item>
+        <el-descriptions-item label="收货地址">{{ currentOrder.address.receiverRegion }} {{ currentOrder.address.receiverAddress }}</el-descriptions-item>
+      </el-descriptions>
+      <template #footer>
+        <el-button type="primary" @click="detailVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, computed } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 import axios from '../utils/axios';
 import { ElMessage } from 'element-plus';
 import { useAuthStore } from '../stores/authStore';
@@ -106,10 +130,9 @@ const statusFilter = ref(null); // 状态过滤
 const totalOrders = ref(0); // 总订单数
 const pageSize = ref(10); // 每页显示数量
 const currentPage = ref(1); // 当前页码
+const detailVisible = ref(false); // 详情弹窗是否可见
+const currentOrder = ref({}); // 当前查看的订单
 let countdownInterval = null; // 倒计时定时器
-
-// 默认倒计时时间（30 分钟）
-const DEFAULT_COUNTDOWN_MINUTES = 30;
 
 // 加载订单
 const loadOrders = async () => {
@@ -153,6 +176,12 @@ const cancelOrder = async (orderId) => {
   }
 };
 
+// 显示订单详情
+const showOrderDetail = (order) => {
+  currentOrder.value = order;
+  detailVisible.value = true;
+};
+
 // 格式化时间
 const formatTime = (time) => {
   return new Date(time).toLocaleString();
@@ -166,11 +195,11 @@ const formatPrice = (price) => {
 // 获取订单状态文本
 const getStatusText = (status) => {
   switch (status) {
-    case 0:
+    case 'PENDING':
       return '待支付';
-    case 1:
+    case 'PAID':
       return '已支付';
-    case 2:
+    case 'CANCELLED':
       return '已取消';
     default:
       return '未知状态';
@@ -180,27 +209,21 @@ const getStatusText = (status) => {
 // 获取订单状态标签类型
 const getStatusTagType = (status) => {
   switch (status) {
-    case 0:
+    case 'PENDING':
       return 'warning';
-    case 1:
+    case 'PAID':
       return 'success';
-    case 2:
+    case 'CANCELLED':
       return 'danger';
     default:
       return 'info';
   }
 };
 
-// 获取默认的结束时间（创建时间 + 30 分钟）
-const getDefaultEndTime = (createTime) => {
-  const createDate = new Date(createTime);
-  return new Date(createDate.getTime() + DEFAULT_COUNTDOWN_MINUTES * 60 * 1000).toISOString();
-};
-
 // 计算倒计时
-const calculateCountdown = (endTime) => {
+const calculateCountdown = (payExpireTime) => {
   const now = new Date().getTime();
-  const end = new Date(endTime).getTime();
+  const end = new Date(payExpireTime).getTime();
   const distance = end - now;
 
   if (distance <= 0) {
@@ -219,7 +242,7 @@ const startCountdown = () => {
   if (countdownInterval) clearInterval(countdownInterval); // 清除旧的定时器
   countdownInterval = setInterval(() => {
     orders.value = orders.value.map((order) => {
-      if (order.status === 0) {
+      if (order.status === 'PENDING') {
         return { ...order }; // 触发响应式更新
       }
       return order;
@@ -256,6 +279,7 @@ onUnmounted(() => {
   font-size: 24px;
   color: #333;
   margin-bottom: 20px;
+  text-align: center;
 }
 
 .order-card {
@@ -284,27 +308,128 @@ onUnmounted(() => {
   border-color: #409eff;
 }
 
-.order-table {
-  width: 100%;
-  margin-bottom: 20px;
+.order-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.order-item {
+  padding: 20px;
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+  background-color: #fff;
+  transition: box-shadow 0.3s ease;
+}
+
+.order-item:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.order-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.order-id {
+  font-size: 16px;
+  font-weight: bold;
 }
 
 .status-tag {
   font-size: 14px;
 }
 
-.countdown {
-  color: #ff4d4f;
+.order-body {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.product-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.product-image {
+  width: 100px;
+  height: 100px;
+  border-radius: 8px;
+}
+
+.product-details {
+  flex: 1;
+}
+
+.product-name {
+  font-size: 16px;
+  font-weight: bold;
+  margin-bottom: 8px;
+}
+
+.activity-name {
+  font-size: 14px;
+  color: #666;
+}
+
+.total-price {
+  font-size: 16px;
   font-weight: bold;
 }
 
+.order-actions {
+  text-align: right;
+}
+
+.countdown {
+  font-size: 14px;
+  color: #ff4d4f;
+  font-weight: bold;
+  margin-bottom: 8px;
+}
+
+.buttons {
+  display: flex;
+  gap: 10px;
+}
+
 .action-button {
-  margin-right: 10px;
+  width: 80px;
 }
 
 .pagination {
   margin-top: 20px;
   display: flex;
   justify-content: center;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .filter-container {
+    flex-direction: column;
+  }
+
+  .search-input,
+  .status-select {
+    width: 100%;
+  }
+
+  .order-body {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  .order-actions {
+    width: 100%;
+    text-align: left;
+  }
+
+  .buttons {
+    justify-content: flex-start;
+  }
 }
 </style>

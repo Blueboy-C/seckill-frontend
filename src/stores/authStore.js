@@ -23,12 +23,12 @@ export const useAuthStore = defineStore('auth', {
 
 
 
-    getUserId() {
-      return this.user ? this.user.id : null;
-    },
-    
     getUserId(){
       return this.userId;
+    },
+    
+    getToken(){
+      return this.token;
     },
 
     clearAuth() {

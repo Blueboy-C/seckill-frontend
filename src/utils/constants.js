@@ -1,0 +1,1 @@
+export const SERVER_URL = 'http://localhost:8080'; // 根据实际情况修改

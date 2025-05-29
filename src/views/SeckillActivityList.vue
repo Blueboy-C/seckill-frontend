@@ -1,6 +1,9 @@
 <template>
   <div class="seckill-activity-list">
-    <h1 class="page-title">秒杀活动列表</h1>
+    <h1 class="page-title">
+      <span class="title-text">秒杀活动列表</span>
+      <span class="title-flash">🔥</span>
+    </h1>
     <div class="search-bar">
       <el-input
         v-model="searchQuery"
@@ -10,7 +13,7 @@
         @keyup.enter="loadActivities"
         class="search-input"
       />
-      <el-button type="primary" @click="loadActivities" class="search-button">搜索</el-button>
+      <el-button type="danger" @click="loadActivities" class="search-button">搜索</el-button>
     </div>
 
     <!-- 活动网格布局 -->
@@ -27,24 +30,30 @@
         <el-card class="activity-card" shadow="hover" @click="viewActivity(activity.id)">
           <div class="activity-info">
             <img 
-                 :src="imageList[Math.floor(Math.random() * imageList.length)]"
-                alt="活动图片" 
-                class="activity-image" 
+              :src="imageList[Math.floor(Math.random() * imageList.length)]"
+              alt="活动图片" 
+              class="activity-image" 
             />
-            
             <h3 class="activity-name">{{ activity.name }}</h3>
             <div class="time-info">
               <p class="time">开始时间: {{ formatTime(activity.startTime) }}</p>
               <p class="time">结束时间: {{ formatTime(activity.endTime) }}</p>
             </div>
-            <div class="countdown" v-if="activity.status === 1">
-              剩余时间: {{ activity.countdown || calculateCountdown(activity.endTime) }}
+            <!-- 倒计时 -->
+            <div class="countdown" v-if="getActivityStatus(activity) === '进行中'">
+              <span class="countdown-text">剩余时间:</span>
+              <span class="countdown-time">{{ calculateCountdown(activity.endTime) }}</span>
+            </div>
+            <div class="countdown" v-else-if="getActivityStatus(activity) === '未开始'">
+              <span class="countdown-text">距离开始:</span>
+              <span class="countdown-time">{{ calculateCountdown(activity.startTime) }}</span>
             </div>
             <p class="stock">库存: {{ activity.stock }}</p>
-            <p class="status" :class="getStatusClass(activity.status)">
-              {{ getStatusText(activity.status) }}
+            <!-- 状态 -->
+            <p class="status" :class="getStatusClass(getActivityStatus(activity))">
+              {{ getActivityStatus(activity) }}
             </p>
-            <el-button type="primary" class="view-detail-button">查看详情</el-button>
+            <el-button type="danger" class="view-detail-button">立即抢购</el-button>
           </div>
         </el-card>
       </el-col>
@@ -72,34 +81,32 @@ const noMore = ref(false); // 是否没有更多活动
 const router = useRouter();
 let countdownInterval = null; // 全局定时器
 
-const imageList =[
-  "https://img.zcool.cn/community/01d5615abc9301a8012062e38ca89c.JPG?x-oss-process=image/auto-orient,1/resize,m_lfit,w_1280,limit_1/sharpen,100/quality,q_100",
+const imageList = [
   "https://img.zcool.cn/community/01d5615abc9301a8012062e38ca89c.JPG?x-oss-process=image/auto-orient,1/resize,m_lfit,w_1280,limit_1/sharpen,100/quality,q_100",
   "https://tse1-mm.cn.bing.net/th/id/OIP-C.i3aj4AAmlwyUCeNpZjnvOAHaE8?rs=1&pid=ImgDetMain",
   "https://img95.699pic.com/photo/50018/0189.jpg_wh860.jpg",
-  "https://img95.699pic.com/photo/60015/8957.jpg_wh860.jpg",
   "https://tse1-mm.cn.bing.net/th/id/OIP-C.3hBgFtrc4-d0daxwmH7cnwHaE8?rs=1&pid=ImgDetMain",
   "https://ts1.cn.mm.bing.net/th/id/R-C.30e8a422ed0531c065614f57b3ec00c7?rik=prPBQ%2bH8HHA6tg&riu=http%3a%2f%2fseopic.699pic.com%2fphoto%2f50105%2f8519.jpg_wh1200.jpg&ehk=nZWSnJtQiDQlJ7orUunPGwc7rc89n7L03b6YDYCpiFI%3d&risl=&pid=ImgRaw&r=0",
   "https://img.zcool.cn/community/0103d65afaf2d2a80121604517b881.jpg?x-oss-process=image/auto-orient,1/resize,m_lfit,w_1280,limit_1/sharpen,100",
   "https://ts1.cn.mm.bing.net/th/id/R-C.ea214c6bd697f499d917f86c9de53c56?rik=o33lqLaAKmrxMg&riu=http%3a%2f%2fp7.zbjimg.com%2fservice%2f2015-11%2f30%2fservice%2f565c164e15dd2.jpg&ehk=mVqsmAQPLS2fy1gbdfiML24rLDEbVL7KSW53DDhI%2bVI%3d&risl=&pid=ImgRaw&r=0",
   "https://pic.nximg.cn/file/20220608/27797488_120921621109_2.jpg",
   "https://tse3-mm.cn.bing.net/th/id/OIP-C.T8szPQWoyzuppclnXhVfcAHaE7?rs=1&pid=ImgDetMain"
-]
+];
 
 // 加载活动列表
 const loadActivities = async () => {
   try {
     loading.value = true;
-    const response = await axios.get('/admin/seckill-activities/current', {
+    const response = await axios.get('/seckill-activities/page', {
       params: {
         pageNum: currentPage.value,
         pageSize,
         name: searchQuery.value,
+        endTime: new Date()
       },
     });
     if (currentPage.value === 1) {
       activities.value = response.data.data; // 第一页直接覆盖
-      activities.value.image="../assets/OIP.jpg"
     } else {
       activities.value = [...activities.value, ...response.data.data]; // 追加新数据
     }
@@ -130,39 +137,11 @@ const formatTime = (time) => {
   return new Date(time).toLocaleString();
 };
 
-// 获取活动状态文本
-const getStatusText = (status) => {
-  switch (status) {
-    case 0:
-      return '未开始';
-    case 1:
-      return '进行中';
-    case 2:
-      return '已结束';
-    default:
-      return '未知状态';
-  }
-};
-
-// 获取活动状态类名
-const getStatusClass = (status) => {
-  switch (status) {
-    case 0:
-      return 'status-not-started';
-    case 1:
-      return 'status-in-progress';
-    case 2:
-      return 'status-ended';
-    default:
-      return '';
-  }
-};
-
 // 计算倒计时
-const calculateCountdown = (endTime) => {
+const calculateCountdown = (targetTime) => {
   const now = new Date().getTime();
-  const end = new Date(endTime).getTime();
-  const diff = end - now;
+  const target = new Date(targetTime).getTime();
+  const diff = target - now;
   if (diff <= 0) return '00:00:00';
   const hours = Math.floor(diff / (1000 * 60 * 60));
   const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
@@ -170,22 +149,42 @@ const calculateCountdown = (endTime) => {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 };
 
-// 更新所有活动的倒计时
-const updateCountdowns = () => {
-  activities.value = activities.value.map((activity) => {
-    if (activity.status === 1) {
-      // 只有进行中的活动需要更新倒计时
-      return { ...activity, countdown: calculateCountdown(activity.endTime) };
-    }
-    return activity;
-  });
+// 获取活动状态
+const getActivityStatus = (activity) => {
+  const now = new Date().getTime();
+  const startTime = new Date(activity.startTime).getTime();
+  const endTime = new Date(activity.endTime).getTime();
+
+  if (now < startTime) {
+    return '未开始';
+  } else if (now >= startTime && now <= endTime) {
+    return '进行中';
+  } else {
+    return '已结束';
+  }
+};
+
+// 获取活动状态类名
+const getStatusClass = (status) => {
+  switch (status) {
+    case '未开始':
+      return 'status-not-started';
+    case '进行中':
+      return 'status-in-progress';
+    case '已结束':
+      return 'status-ended';
+    default:
+      return '';
+  }
 };
 
 // 启动全局定时器
 const startCountdown = () => {
   if (countdownInterval) clearInterval(countdownInterval); // 清除旧的定时器
   countdownInterval = setInterval(() => {
-    updateCountdowns(); // 每秒更新一次所有活动的倒计时
+    activities.value = activities.value.map((activity) => {
+      return { ...activity }; // 触发响应式更新
+    });
   }, 1000);
 };
 
@@ -201,12 +200,11 @@ onUnmounted(() => {
 });
 </script>
 
-
-
 <style scoped>
 .seckill-activity-list {
   padding: 20px;
   background-color: #f8f8f8;
+  min-height:100vh;
 }
 
 .page-title {

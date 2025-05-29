@@ -1,351 +1,534 @@
 <template>
-  <div class="product-management">
-    <h1 class="page-title">商品管理</h1>
+  <el-container class="product-management">
+    <!-- Header -->
+    <el-header class="header">
+      <h1>商品管理</h1>
+    </el-header>
 
-    <!-- 搜索框 -->
-    <div class="search-container">
-      <el-input
-        v-model="searchQuery"
-        placeholder="请输入商品名称搜索"
-        clearable
-        @clear="fetchProducts"
-        @keyup.enter="searchProducts"
-        class="search-input"
-      >
-        <template #append>
-          <el-button :icon="Search" @click="searchProducts" />
-        </template>
-      </el-input>
-    </div>
+    <!-- Main Content -->
+    <el-main>
+      <!-- 搜索栏 -->
+      <el-row class="search-bar" :gutter="20">
+        <el-col :span="6">
+          <el-input
+            v-model="searchParams.name"
+            placeholder="商品名称"
+            clearable
+            prefix-icon="el-icon-search"
+          />
+        </el-col>
+        <el-col :span="6">
+          <el-select
+            v-model="searchParams.categoryId"
+            placeholder="选择类别"
+            clearable
+            class="category-select"
+            @change="handleSearch"
+          >
+            <el-option
+              v-for="category in categories"
+              :key="category.id"
+              :label="category.name"
+              :value="category.id"
+            />
+          </el-select>
+        </el-col>
+        <el-col :span="6" class="action-buttons">
+          <el-button type="primary" icon="el-icon-search" @click="handleSearch">
+            搜索
+          </el-button>
+          <el-button type="success" icon="el-icon-plus" @click="handleAdd">
+            添加商品
+          </el-button>
+        </el-col>
+      </el-row>
 
-    <!-- 商品列表 -->
-    <el-card class="product-table-card">
-      <el-table
-        :data="products"
-        border
-        style="width: 100%"
-        max-height="500"
-        stripe
-      >
-        <el-table-column prop="id" label="ID" width="80" />
-        <el-table-column prop="name" label="商品名称" />
-        <el-table-column prop="description" label="商品描述">
-          <template #default="{ row }">
-            <el-tooltip :content="row.description" placement="top">
-              <span class="description-text">
-                {{ truncateDescription(row.description) }}
-              </span>
-            </el-tooltip>
-          </template>
-        </el-table-column>
-        <el-table-column prop="price" label="价格" width="120">
-          <template #default="{ row }">
-            {{ row.price.toFixed(2) }} 元
-          </template>
-        </el-table-column>
-        <el-table-column prop="stock" label="库存" width="100" />
-        <el-table-column prop="createTime" label="创建时间" width="180">
-          <template #default="{ row }">
-            {{ formatDate(row.createTime) }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="updateTime" label="更新时间" width="180">
-          <template #default="{ row }">
-            {{ formatDate(row.updateTime) }}
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="180">
-          <template #default="{ row }">
-            <el-button type="primary" size="small" @click="editProduct(row)">
-              编辑
-            </el-button>
-            <el-button type="danger" size="small" @click="deleteProduct(row.id)">
-              删除
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+      <!-- 商品列表 -->
+      <div class="table-container">
+        <el-table :data="products" style="width: 100%" border stripe>
+          <el-table-column prop="id" label="ID" width="80" align="center" />
+          <el-table-column prop="name" label="商品名称" />
+          <el-table-column prop="description" label="描述" width="200">
+            <template #default="scope">
+              <el-tooltip :content="scope.row.description" placement="top">
+                <div class="description-cell">
+                  {{ scope.row.description }}
+                </div>
+              </el-tooltip>
+            </template>
+          </el-table-column>
+          <el-table-column prop="price" label="价格" align="center" />
+          <el-table-column prop="stock" label="库存" align="center" />
+          <el-table-column prop="category.name" label="类别" />
+          <el-table-column label="图片" width="150" align="center">
+            <template #default="scope">
+              <el-image
+                v-for="(image, index) in scope.row.imageList"
+                :key="index"
+                :src="image.imageUrl"
+                :preview-src-list="scope.row.imageList.map(img => img.imageUrl)"
+                class="product-image"
+              />
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="250" align="center">
+            <template #default="scope">
+              <el-button
+                type="primary"
+                size="small"
+                @click="handleEdit(scope.row)"
+              >
+                编辑
+              </el-button>
+              <el-button
+                type="danger"
+                size="small"
+                @click="handleDelete(scope.row.id)"
+              >
+                删除
+              </el-button>
+              <el-button
+                type="warning"
+                size="small"
+                @click="handleCreateSeckillActivity(scope.row)"
+              >
+                创建秒杀活动
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
 
       <!-- 分页 -->
       <el-pagination
         v-model:current-page="pagination.pageNum"
         v-model:page-size="pagination.pageSize"
         :total="pagination.total"
-        layout="total, sizes, prev, pager, next, jumper"
-        @current-change="fetchProducts"
-        @size-change="fetchProducts"
+        layout="prev, pager, next, sizes, total"
         class="pagination"
+        @current-change="handlePageChange"
+        @size-change="handlePageSizeChange"
       />
-    </el-card>
 
-    <!-- 新增/编辑商品表单 -->
-    <el-dialog
-      v-model="showForm"
-      :title="isEditing ? '编辑商品' : '新增商品'"
-      width="500px"
-    >
-      <el-form
-        :model="form"
-        label-width="80px"
-        :rules="formRules"
-        ref="formRef"
-      >
-        <el-form-item label="商品名称" prop="name">
-          <el-input v-model="form.name" placeholder="请输入商品名称" />
-        </el-form-item>
-        <el-form-item label="商品描述" prop="description">
-          <el-input
-            v-model="form.description"
-            type="textarea"
-            placeholder="请输入商品描述"
-          />
-        </el-form-item>
-        <el-form-item label="价格" prop="price">
-          <el-input
-            v-model.number="form.price"
-            type="number"
-            placeholder="请输入价格"
-          />
-        </el-form-item>
-        <el-form-item label="库存" prop="stock">
-          <el-input
-            v-model.number="form.stock"
-            type="number"
-            placeholder="请输入库存"
-          />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="cancelForm">取消</el-button>
-        <el-button type="primary" @click="submitForm">
-          {{ isEditing ? '更新' : '新增' }}
-        </el-button>
-      </template>
-    </el-dialog>
+      <!-- 添加/编辑商品对话框 -->
+      <el-dialog v-model="dialogVisible" :title="dialogTitle" width="50%">
+        <el-form
+          :model="formProduct"
+          label-width="100px"
+          :rules="rules"
+          ref="productForm"
+        >
+          <el-form-item label="商品名称" prop="name">
+            <el-input v-model="formProduct.name" />
+          </el-form-item>
+          <el-form-item label="描述" prop="description">
+            <el-input v-model="formProduct.description" type="textarea" />
+          </el-form-item>
+          <el-form-item label="价格" prop="price">
+            <el-input v-model.number="formProduct.price" type="number" />
+          </el-form-item>
+          <el-form-item label="库存" prop="stock">
+            <el-input v-model.number="formProduct.stock" type="number" />
+          </el-form-item>
+          <el-form-item label="类别" prop="category.id">
+            <el-select v-model="formProduct.category.id" placeholder="选择类别">
+              <el-option
+                v-for="category in categories"
+                :key="category.id"
+                :label="category.name"
+                :value="category.id"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="商品图片">
+            <el-upload
+              action="#"
+              :limit="5"
+              :file-list="newImageList"
+              list-type="picture-card"
+              :on-change="handleImageChange"
+              :on-remove="handleImageRemove"
+              :auto-upload="false"
+            >
+              <el-icon><Plus /></el-icon>
+            </el-upload>
+            <div v-for="(image, index) in existingImageList" :key="index" class="image-item">
+              <el-image :src="image.imageUrl" style="width: 50px; height: 50px" />
+              <el-button
+                type="danger"
+                size="small"
+                @click="handleRemoveExistingImage(index)"
+              >
+                删除
+              </el-button>
+            </div>
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button @click="dialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="handleSave">保存</el-button>
+        </template>
+      </el-dialog>
 
-    <!-- 新增商品按钮 -->
-    <el-button type="primary" @click="addProduct" class="add-product-button">
-      新增商品
-    </el-button>
-  </div>
+      <!-- 创建秒杀活动对话框 -->
+      <el-dialog v-model="seckillDialogVisible" title="创建秒杀活动" width="50%">
+        <el-form :model="formSeckill" label-width="100px">
+          <el-form-item label="活动名称" required>
+            <el-input v-model="formSeckill.name" />
+          </el-form-item>
+          <el-form-item label="开始时间" required>
+            <el-date-picker
+              v-model="formSeckill.startTime"
+              type="datetime"
+              placeholder="选择开始时间"
+            />
+          </el-form-item>
+          <el-form-item label="结束时间" required>
+            <el-date-picker
+              v-model="formSeckill.endTime"
+              type="datetime"
+              placeholder="选择结束时间"
+            />
+          </el-form-item>
+          <el-form-item label="库存" required>
+            <el-input v-model.number="formSeckill.stock" type="number" />
+          </el-form-item>
+          <el-form-item label="状态" required>
+            <el-select v-model="formSeckill.status">
+              <el-option label="未开始" :value="0" />
+              <el-option label="进行中" :value="1" />
+              <el-option label="已结束" :value="2" />
+            </el-select>
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button @click="seckillDialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="submitSeckillForm">保存</el-button>
+        </template>
+      </el-dialog>
+    </el-main>
+  </el-container>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue';
-import { Search } from '@element-plus/icons-vue';
-import { ElMessage, ElMessageBox } from 'element-plus';
-import instance from '@/utils/axios'; // 导入封装的 axios 实例
+import axios from '@/utils/axios';
+import { ElMessage } from 'element-plus';
+import { Plus } from '@element-plus/icons-vue';
+import { useAuthStore } from '@/stores/authStore';
+import { getFullImageUrl } from '@/utils/imageUtils';
 
-// 商品列表
+const authStore = useAuthStore();
+const productForm = ref(null);
+
+// 商品列表数据
 const products = ref([]);
+const categories = ref([]);
 
-// 搜索查询
-const searchQuery = ref('');
-
-// 分页信息
-const pagination = ref({
-  pageNum: 1, // 当前页码
-  pageSize: 10, // 每页大小
-  total: 0, // 总记录数
+// 搜索参数
+const searchParams = ref({
+  name: '',
+  categoryId: null,
 });
 
-// 表单显示状态
-const showForm = ref(false);
+// 分页参数
+const pagination = ref({
+  pageNum: 1,
+  pageSize: 10,
+  total: 0,
+});
 
-// 是否为编辑模式
-const isEditing = ref(false);
-
-// 表单数据
-const form = ref({
+// 对话框相关
+const dialogVisible = ref(false);
+const dialogTitle = ref('添加商品');
+const formProduct = ref({
   id: null,
   name: '',
   description: '',
   price: 0,
   stock: 0,
+  category: {
+    id: null,
+  },
+  imageList: [],
 });
 
-// 表单引用
-const formRef = ref(null); // 确保这里正确声明了 formRef
+// 原有图片列表
+const existingImageList = ref([]);
+
+// 新上传图片列表
+const newImageList = ref([]);
+
+// 秒杀活动对话框相关
+const seckillDialogVisible = ref(false);
+const formSeckill = ref({
+  name: '',
+  productId: null,
+  startTime: null,
+  endTime: null,
+  stock: 0,
+  status: 0, // 0:未开始, 1:进行中, 2:已结束
+});
 
 // 表单校验规则
-const formRules = {
-  name: [
-    { required: true, message: '请输入商品名称', trigger: 'blur' },
-    { min: 2, max: 50, message: '商品名称长度在 2 到 50 个字符', trigger: 'blur' },
-  ],
-  description: [
-    { required: true, message: '请输入商品描述', trigger: 'blur' },
-    { min: 5, max: 200, message: '商品描述长度在 10 到 200 个字符', trigger: 'blur' },
-  ],
+const rules = ref({
+  name: [{ required: true, message: '商品名称不能为空', trigger: 'blur' }],
+  description: [{ required: true, message: '商品描述不能为空', trigger: 'blur' }],
   price: [
-    { required: true, message: '请输入价格', trigger: 'blur' },
+    { required: true, message: '价格不能为空', trigger: 'blur' },
     { type: 'number', message: '价格必须为数字', trigger: 'blur' },
   ],
   stock: [
-    { required: true, message: '请输入库存', trigger: 'blur' },
+    { required: true, message: '库存不能为空', trigger: 'blur' },
     { type: 'number', message: '库存必须为数字', trigger: 'blur' },
   ],
-};
-
-// 格式化日期
-const formatDate = (date) => {
-  return new Date(date).toLocaleString();
-};
-
-// 截断商品描述
-const truncateDescription = (description) => {
-  const maxLength = 30; // 最大显示长度
-  return description.length > maxLength
-    ? description.slice(0, maxLength) + '...'
-    : description;
-};
+  'category.id': [{ required: true, message: '商品类别不能为空', trigger: 'change' }],
+});
 
 // 获取商品列表
 const fetchProducts = async () => {
   try {
-    const response = await instance.get('/admin/products/page', {
+    const response = await axios.get('/products/search', {
       params: {
-        pageNum: pagination.value.pageNum,
-        pageSize: pagination.value.pageSize,
+        ...searchParams.value,
+        ...pagination.value,
       },
     });
-    products.value = response.data.data; // 商品列表
-    pagination.value.total = response.data.total; // 总记录数
+    products.value = response.data.data;
+    pagination.value.total = response.data.total;
   } catch (error) {
     ElMessage.error('获取商品列表失败');
   }
 };
 
+// 获取类别列表
+const fetchCategories = async () => {
+  try {
+    const response = await axios.get('/categories');
+    categories.value = response.data;
+  } catch (error) {
+    ElMessage.error('获取类别列表失败');
+  }
+};
+
 // 搜索商品
-const searchProducts = async () => {
-  try {
-    const response = await instance.get('/admin/products/search', {
-      params: {
-        name: searchQuery.value,
-        pageNum: pagination.value.pageNum,
-        pageSize: pagination.value.pageSize,
-      },
-    });
-    products.value = response.data.data; // 搜索结果
-    pagination.value.total = response.data.total; // 更新总记录数
-  } catch (error) {
-    ElMessage.error('搜索商品失败');
-  }
+const handleSearch = () => {
+  pagination.value.pageNum = 1;
+  fetchProducts();
 };
 
-// 新增商品
-const addProduct = () => {
-  showForm.value = true;
-  isEditing.value = false;
-  resetForm();
+// 分页变化
+const handlePageChange = (pageNum) => {
+  pagination.value.pageNum = pageNum;
+  fetchProducts();
 };
 
-// 编辑商品
-const editProduct = (product) => {
-  showForm.value = true;
-  isEditing.value = true;
-  form.value = { ...product };
+// 分页大小变化
+const handlePageSizeChange = (pageSize) => {
+  pagination.value.pageSize = pageSize;
+  fetchProducts();
 };
 
-// 删除商品
-const deleteProduct = async (id) => {
-  try {
-    await ElMessageBox.confirm('确定要删除该商品吗？', '提示', {
-      type: 'warning',
-    });
-    await instance.delete(`/admin/products/${id}`);
-    ElMessage.success('删除成功');
-    fetchProducts(); // 删除后刷新商品列表
-  } catch (error) {
-    if (error !== 'cancel') {
-      ElMessage.error('删除商品失败');
-    }
-  }
-};
-
-// 提交表单
-const submitForm = async () => {
-  try {
-    await formRef.value.validate(); // 确保这里使用的是 formRef.value
-    if (isEditing.value) {
-      await instance.put(`/admin/products/${form.value.id}`, form.value);
-      ElMessage.success('更新成功');
-    } else {
-      await instance.post('/admin/products', form.value);
-      ElMessage.success('新增成功');
-    }
-    showForm.value = false;
-    fetchProducts(); // 提交后刷新商品列表
-  } catch (error) {
-    if (error !== 'cancel') {
-      ElMessage.error('提交表单失败');
-    }
-  }
-};
-
-// 取消表单
-const cancelForm = () => {
-  showForm.value = false;
-  resetForm();
-};
-
-// 重置表单
-const resetForm = () => {
-  form.value = {
+// 打开添加商品对话框
+const handleAdd = () => {
+  dialogTitle.value = '添加商品';
+  formProduct.value = {
     id: null,
     name: '',
     description: '',
     price: 0,
     stock: 0,
+    category: {
+      id: null,
+    },
+    imageList: [],
+  };
+  existingImageList.value = [];
+  newImageList.value = [];
+  dialogVisible.value = true;
+};
+
+// 打开编辑商品对话框
+const handleEdit = (product) => {
+  dialogTitle.value = '编辑商品';
+  formProduct.value = JSON.parse(JSON.stringify(product));
+  existingImageList.value = product.imageList.map((img) => ({
+    ...img,
+    imageUrl: getFullImageUrl(img.imageUrl),
+  }));
+  newImageList.value = [];
+  dialogVisible.value = true;
+};
+
+// 图片选择变化
+const handleImageChange = (file) => {
+  newImageList.value.push(file);
+};
+
+// 删除新上传图片
+const handleImageRemove = (file) => {
+  newImageList.value = newImageList.value.filter((item) => item.uid !== file.uid);
+};
+
+// 删除原有图片
+const handleRemoveExistingImage = (index) => {
+  existingImageList.value.splice(index, 1);
+};
+
+// 保存商品
+const handleSave = async () => {
+  try {
+    // 表单校验
+    await productForm.value.validate();
+
+    // 上传新图片
+    const uploadedImages = [];
+    for (const file of newImageList.value) {
+      if (file.raw) {
+        const formData = new FormData();
+        formData.append('file', file.raw);
+        const response = await axios.post('/api/upload', formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+            Authorization: `Bearer ${authStore.getToken()}`,
+          },
+        });
+        uploadedImages.push({ imageUrl: getFullImageUrl(response.data) });
+      }
+    }
+
+    // 合并原有图片和新上传的图片
+    formProduct.value.imageList = [...existingImageList.value, ...uploadedImages];
+
+    // 更新商品信息
+    if (formProduct.value.id) {
+      await axios.put(`/products/${formProduct.value.id}`, formProduct.value);
+      ElMessage.success('商品更新成功');
+    } else {
+      await axios.post('/products', formProduct.value);
+      ElMessage.success('商品添加成功');
+    }
+
+    dialogVisible.value = false;
+    fetchProducts();
+  } catch (error) {
+    ElMessage.error('保存失败');
+  }
+};
+
+// 删除商品
+const handleDelete = async (id) => {
+  try {
+    await axios.delete(`/products/${id}`);
+    ElMessage.success('商品删除成功');
+    fetchProducts();
+  } catch (error) {
+    ElMessage.error('删除商品失败');
+  }
+};
+
+// 创建秒杀活动
+const handleCreateSeckillActivity = (product) => {
+  seckillDialogVisible.value = true;
+  formSeckill.value = {
+    name: `${product.name}秒杀活动`,
+    productId: product.id,
+    startTime: null,
+    endTime: null,
+    stock: product.stock,
+    status: 0,
   };
 };
 
-// 组件挂载时获取商品列表
+// 提交秒杀活动表单
+const submitSeckillForm = async () => {
+  try {
+    await axios.post('/seckill-activities', formSeckill.value);
+    ElMessage.success('秒杀活动创建成功');
+    seckillDialogVisible.value = false;
+  } catch (error) {
+    ElMessage.error('创建秒杀活动失败');
+  }
+};
+
+// 初始化数据
 onMounted(() => {
   fetchProducts();
+  fetchCategories();
 });
 </script>
 
 <style scoped>
 .product-management {
   padding: 20px;
-  max-width: 1400px; /* 增加最大宽度 */
-  margin: 0 auto;
 }
 
-.page-title {
-  font-size: 24px;
-  color: #333;
+.header {
+  background-color: #f5f7fa;
+  padding: 10px;
+  font-size: 18px;
+  font-weight: bold;
+  border-bottom: 1px solid #e4e7ed;
+}
+
+.search-bar {
+  margin-bottom: 20px;
+  position: sticky;
+  top: 0;
+  background-color: #fff;
+  z-index: 100;
+  padding: 10px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.category-select {
+  width: 100%;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.table-container {
+  min-height: 650px;
+  max-height: 650px;
+  overflow-y: auto;
   margin-bottom: 20px;
 }
 
-.search-container {
-  margin-bottom: 20px;
-}
-
-.search-input {
-  width: 300px;
-}
-
-.product-table-card {
-  margin-bottom: 20px;
-}
-
-.description-text {
-  display: inline-block;
-  max-width: 200px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.product-image {
+  width: 50px;
+  height: 50px;
+  margin-right: 5px;
+  border-radius: 4px;
+  object-fit: cover;
 }
 
 .pagination {
-  margin-top: 20px;
-  display: flex;
-  justify-content: center;
+  position: sticky;
+  bottom: 0;
+  background-color: #fff;
+  z-index: 100;
+  padding: 10px;
+  box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.1);
+  text-align: center;
 }
 
-.add-product-button {
-  margin-top: 20px;
+.image-item {
+  display: flex;
+  align-items: center;
+  margin-bottom: 5px;
+}
+
+.image-item .el-button {
+  margin-left: 10px;
+}
+
+.description-cell {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
 }
 </style>

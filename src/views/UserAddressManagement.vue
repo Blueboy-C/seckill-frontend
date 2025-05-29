@@ -8,29 +8,31 @@
     </el-button>
 
     <!-- 地址列表 -->
-    <el-table :data="addresses" border style="width: 100%" class="address-table">
-      <el-table-column prop="receiverName" label="收货人" width="120" align="center" />
-      <el-table-column prop="receiverPhone" label="联系电话" width="150" align="center" />
-      <el-table-column prop="receiverRegion" label="所在地区" width="150" align="center" />
-      <el-table-column prop="receiverAddress" label="详细地址" min-width="200" />
-      <el-table-column label="操作" width="200" align="center">
-        <template #default="{ row }">
-          <div class="action-buttons">
-            <el-button type="primary" size="small" @click="editAddress(row)">编辑</el-button>
-            <el-button type="danger" size="small" @click="deleteAddress(row.id)">删除</el-button>
-            <el-button
-              v-if="!row.isDefault"
-              type="success"
-              size="small"
-              @click="setDefaultAddress(row.id)"
-            >
-              设为默认
-            </el-button>
-            <el-tag v-else type="success" size="small">默认地址</el-tag>
-          </div>
-        </template>
-      </el-table-column>
-    </el-table>
+    <div class="address-list">
+      <div v-for="address in addresses" :key="address.id" class="address-card">
+        <div class="address-header">
+          <span class="receiver-name">{{ address.receiverName }}</span>
+          <el-tag v-if="address.isDefault" type="success" size="small">默认地址</el-tag>
+        </div>
+        <div class="address-body">
+          <p class="receiver-phone">联系电话：{{ address.receiverPhone }}</p>
+          <p class="receiver-region">所在地区：{{ address.receiverRegion }}</p>
+          <p class="receiver-address">详细地址：{{ address.receiverAddress }}</p>
+        </div>
+        <div class="address-actions">
+          <el-button type="primary" size="small" @click="editAddress(address)">编辑</el-button>
+          <el-button type="danger" size="small" @click="deleteAddress(address.id)">删除</el-button>
+          <el-button
+            v-if="!address.isDefault"
+            type="success"
+            size="small"
+            @click="setDefaultAddress(address.id)"
+          >
+            设为默认
+          </el-button>
+        </div>
+      </div>
+    </div>
 
     <!-- 添加/编辑地址弹窗 -->
     <el-dialog
@@ -99,6 +101,9 @@ const addressFormVisible = ref(false);
 // 是否为编辑模式
 const isEditing = ref(false);
 
+// 表单引用
+const addressFormRef = ref(null);
+
 // 加载地址列表
 const loadAddresses = async () => {
   try {
@@ -134,6 +139,9 @@ const editAddress = (address) => {
 // 提交地址表单
 const submitAddressForm = async () => {
   try {
+    // 校验表单
+    await addressFormRef.value.validate();
+
     if (isEditing.value) {
       await axios.post('/user/address/update', addressForm.value);
       ElMessage.success('地址更新成功');
@@ -147,7 +155,12 @@ const submitAddressForm = async () => {
     addressFormVisible.value = false;
     loadAddresses(); // 刷新地址列表
   } catch (error) {
-    ElMessage.error('提交地址失败');
+    if (error instanceof Error) {
+      ElMessage.error('提交地址失败');
+    } else {
+      // 校验失败，error 是一个对象，包含校验失败的信息
+      ElMessage.warning('请填写完整的地址信息');
+    }
   }
 };
 
@@ -187,6 +200,7 @@ onMounted(() => {
   padding: 20px;
   max-width: 1200px;
   margin: 0 auto;
+  background-color: #f8f8f8;
 }
 
 .page-title {
@@ -198,33 +212,66 @@ onMounted(() => {
 
 .add-address-button {
   margin-bottom: 20px;
+  background-color: #409eff;
+  border-color: #409eff;
 }
 
-.address-table {
-  margin-top: 20px;
-  width: 100%;
+.address-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
 
-.address-table .el-table__body-wrapper {
-  overflow-x: auto;
+.address-card {
+  padding: 20px;
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+  background-color: #fff;
+  transition: box-shadow 0.3s ease;
 }
 
-.action-buttons {
+.address-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.address-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.receiver-name {
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.address-body {
+  margin-bottom: 16px;
+}
+
+.receiver-phone,
+.receiver-region,
+.receiver-address {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 8px;
+}
+
+.address-actions {
   display: flex;
   gap: 10px;
-  justify-content: center;
-  align-items: center;
-}
-
-.el-tag {
-  margin-left: 10px;
 }
 
 /* 响应式设计 */
 @media (max-width: 768px) {
-  .action-buttons {
+  .address-card {
+    padding: 16px;
+  }
+
+  .address-actions {
     flex-direction: column;
-    gap: 5px;
+    gap: 8px;
   }
 
   .el-button {

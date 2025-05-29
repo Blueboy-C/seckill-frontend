@@ -1,404 +1,235 @@
 <template>
-  <div class="user-management">
-    <h1 class="page-title">用户管理</h1>
-
-    <!-- 搜索框 -->
-    <div class="search-container">
-      <el-input
-        v-model="searchQuery"
-        placeholder="请输入用户名或 ID 搜索"
-        clearable
-        @clear="fetchUsers"
-        @keyup.enter="searchUsers"
-        class="search-input"
-      >
-        <template #append>
-          <el-button :icon="Search" @click="searchUsers" />
-        </template>
-      </el-input>
-    </div>
-
-    <!-- 用户列表 -->
-    <el-card class="user-table-card">
-      <el-table
-        :data="users"
-        border
-        style="width: 100%"
-        max-height="500"
-        stripe
-        :row-key="(row) => row.id"
-      >
-        <!-- 展开行 -->
-        <el-table-column type="expand">
-          <template #default="{ row }">
-            <div class="expand-content">
-              <p><strong>用户ID:</strong> {{ row.id }}</p>
-              <p><strong>用户名:</strong> {{ row.username }}</p>
-              <p><strong>邮箱:</strong> {{ row.email }}</p>
-              <p><strong>昵称:</strong> {{ row.nickname }}</p>
-              <p><strong>角色:</strong> {{ row.role === 1 ? '管理员' : '普通用户' }}</p>
-              <p><strong>创建时间:</strong> {{ formatTime(row.createTime) }}</p>
-              <p><strong>更新时间:</strong> {{ formatTime(row.updateTime) }}</p>
-            </div>
-          </template>
-        </el-table-column>
-
-        <!-- 用户ID -->
-        <el-table-column prop="id" label="ID" width="80" />
-
-        <!-- 用户名 -->
-        <el-table-column prop="username" label="用户名" />
-
-        <!-- 邮箱 -->
-        <el-table-column prop="email" label="邮箱" />
-
-        <!-- 昵称 -->
-        <el-table-column prop="nickname" label="昵称" />
-
-        <!-- 头像 -->
-        <el-table-column prop="avatar" label="头像">
-          <template #default="{ row }">
-            <el-image
-              v-if="row.avatar"
-              :src="row.avatar"
-              style="width: 50px; height: 50px; border-radius: 50%"
-              fit="cover"
-            />
-            <span v-else>无头像</span>
-          </template>
-        </el-table-column>
-
-        <!-- 角色 -->
-        <el-table-column prop="role" label="角色">
-          <template #default="{ row }">
-            <el-tag :type="row.role === 1 ? 'success' : 'info'">
-              {{ row.role === 1 ? '管理员' : '普通用户' }}
-            </el-tag>
-          </template>
-        </el-table-column>
-
-        <!-- 状态 -->
-        <el-table-column label="状态">
-          <template #default="{ row }">
-            <el-tag :type="row.status === 1 ? 'success' : 'danger'">
-              {{ row.status === 1 ? '活跃' : '禁用' }}
-            </el-tag>
-          </template>
-        </el-table-column>
-
-        <!-- 操作 -->
-        <el-table-column label="操作" width="220">
-          <template #default="{ row }">
-            <el-button type="primary" size="small" @click="editUser(row)">
-              编辑
-            </el-button>
-            <el-button type="warning" size="small" @click="resetPassword(row.id)">
-              重置密码
-            </el-button>
-            <el-button type="danger" size="small" @click="deleteUser(row.id)">
-              删除
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-
-      <!-- 分页 -->
-      <el-pagination
-        v-model:current-page="pagination.pageNum"
-        v-model:page-size="pagination.pageSize"
-        :total="pagination.total"
-        layout="total, sizes, prev, pager, next, jumper"
-        @current-change="fetchUsers"
-        @size-change="fetchUsers"
-        class="pagination"
-      />
-    </el-card>
-
-    <!-- 新增/编辑用户表单 -->
-    <el-dialog
-      v-model="showForm"
-      :title="isEditing ? '编辑用户' : '新增用户'"
-      width="500px"
-    >
-      <el-form
-        :model="form"
-        label-width="80px"
-        :rules="formRules"
-        ref="formRef"
-      >
-        <el-form-item label="用户名" prop="username">
-          <el-input v-model="form.username" placeholder="请输入用户名" />
-        </el-form-item>
-        <el-form-item label="密码" prop="password" v-if="!isEditing">
-          <el-input
-            v-model="form.password"
-            type="password"
-            placeholder="请输入密码"
-          />
-        </el-form-item>
-        <el-form-item label="邮箱" prop="email">
-          <el-input v-model="form.email" type="email" placeholder="请输入邮箱" />
-        </el-form-item>
-        <el-form-item label="昵称" prop="nickname">
-          <el-input v-model="form.nickname" placeholder="请输入昵称" />
-        </el-form-item>
-        <el-form-item label="头像">
-          <el-input v-model="form.avatar" placeholder="请输入头像 URL" />
-        </el-form-item>
-        <el-form-item label="角色">
-          <el-select v-model="form.role" placeholder="请选择角色">
-            <el-option label="普通用户" :value="0" />
-            <el-option label="管理员" :value="1" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="状态">
-          <el-select v-model="form.status" placeholder="请选择状态">
-            <el-option label="活跃" :value="1" />
-            <el-option label="禁用" :value="0" />
-          </el-select>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="cancelForm">取消</el-button>
-        <el-button type="primary" @click="submitForm">
-          {{ isEditing ? '更新' : '新增' }}
-        </el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 新增用户按钮 -->
-    <el-button type="primary" @click="addUser" class="add-user-button">
-      新增用户
-    </el-button>
-  </div>
+  <div ref="sceneContainer" class="scene-container"></div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue';
-import { Search } from '@element-plus/icons-vue';
-import { ElMessage, ElMessageBox } from 'element-plus';
-import instance from '@/utils/axios'; // 导入封装的 axios 实例
+import * as THREE from 'three';
 
-// 用户列表
-const users = ref([]);
+const sceneContainer = ref(null);
 
-// 搜索查询
-const searchQuery = ref('');
-
-// 分页信息
-const pagination = ref({
-  pageNum: 1, // 当前页码
-  pageSize: 10, // 每页大小
-  total: 0, // 总记录数
-});
-
-// 表单显示状态
-const showForm = ref(false);
-
-// 是否为编辑模式
-const isEditing = ref(false);
-
-// 表单数据
-const form = ref({
-  id: null,
-  username: '',
-  password: '',
-  email: '',
-  nickname: '',
-  avatar: '',
-  role: 0,
-  status: 1, // 默认状态为活跃
-});
-
-// 表单校验规则
-const formRules = {
-  username: [
-    { required: true, message: '请输入用户名', trigger: 'blur' },
-    { min: 3, max: 20, message: '用户名长度在 3 到 20 个字符', trigger: 'blur' },
-  ],
-  password: [
-    { required: true, message: '请输入密码', trigger: 'blur' },
-    { min: 6, message: '密码长度不能小于 6 位', trigger: 'blur' },
-  ],
-  email: [
-    { required: true, message: '请输入邮箱', trigger: 'blur' },
-    { type: 'email', message: '请输入正确的邮箱格式', trigger: 'blur' },
-  ],
-  nickname: [
-    { required: true, message: '请输入昵称', trigger: 'blur' },
-    { min: 2, max: 20, message: '昵称长度在 2 到 20 个字符', trigger: 'blur' },
-  ],
-};
-
-// 获取用户列表
-const fetchUsers = async () => {
-  try {
-    const response = await instance.get('/admin/users/page', {
-      params: {
-        pageNum: pagination.value.pageNum,
-        pageSize: pagination.value.pageSize,
-      },
-    });
-    users.value = response.data; // 用户列表
-    pagination.value.total = response.total; // 总记录数
-  } catch (error) {
-    ElMessage.error('获取用户列表失败');
-  }
-};
-
-// 搜索用户
-const searchUsers = async () => {
-  try {
-    const response = await instance.get('/admin/users/search', {
-      params: {
-        query: searchQuery.value,
-        pageNum: pagination.value.pageNum,
-        pageSize: pagination.value.pageSize,
-      },
-    });
-    users.value = response.data; // 搜索结果
-    pagination.value.total = response.total; // 更新总记录数
-  } catch (error) {
-    ElMessage.error('搜索用户失败');
-  }
-};
-
-// 新增用户
-const addUser = () => {
-  showForm.value = true;
-  isEditing.value = false;
-  resetForm();
-};
-
-// 编辑用户
-const editUser = (user) => {
-  showForm.value = true;
-  isEditing.value = true;
-  form.value = { ...user };
-};
-
-// 重置密码
-const resetPassword = async (id) => {
-  try {
-    await ElMessageBox.confirm('确定要重置该用户的密码吗？', '提示', {
-      type: 'warning',
-    });
-    await instance.post(`/admin/users/reset-password/${id}`);
-    ElMessage.success('密码重置成功');
-  } catch (error) {
-    if (error !== 'cancel') {
-      ElMessage.error('重置密码失败');
-    }
-  }
-};
-
-// 删除用户
-const deleteUser = async (id) => {
-  try {
-    await ElMessageBox.confirm('确定要删除该用户吗？', '提示', {
-      type: 'warning',
-    });
-    await instance.delete(`/admin/users/${id}`);
-    ElMessage.success('删除成功');
-    fetchUsers(); // 删除后刷新用户列表
-  } catch (error) {
-    if (error !== 'cancel') {
-      ElMessage.error('删除用户失败');
-    }
-  }
-};
-
-// 提交表单
-const submitForm = async () => {
-  try {
-    await formRef.value.validate();
-    if (isEditing.value) {
-      await instance.put(`/admin/users/${form.value.id}`, form.value);
-      ElMessage.success('更新成功');
-    } else {
-      await instance.post('/admin/users/add', form.value);
-      ElMessage.success('新增成功');
-    }
-    showForm.value = false;
-    fetchUsers(); // 提交后刷新用户列表
-  } catch (error) {
-    if (error !== 'cancel') {
-      ElMessage.error('提交表单失败');
-    }
-  }
-};
-
-// 取消表单
-const cancelForm = () => {
-  showForm.value = false;
-  resetForm();
-};
-
-// 重置表单
-const resetForm = () => {
-  form.value = {
-    id: null,
-    username: '',
-    password: '',
-    email: '',
-    nickname: '',
-    avatar: '',
-    role: 0,
-    status: 1,
-  };
-};
-
-// 格式化时间
-const formatTime = (time) => {
-  return new Date(time).toLocaleString();
-};
-
-// 组件挂载时获取用户列表
 onMounted(() => {
-  fetchUsers();
+  // 创建场景
+  const scene = new THREE.Scene();
+
+  // 创建相机
+  const camera = new THREE.PerspectiveCamera(
+    75, // 视野角度
+    sceneContainer.value.clientWidth / sceneContainer.value.clientHeight, // 宽高比
+    0.1, // 近裁剪面
+    1000 // 远裁剪面
+  );
+  camera.position.set(0, 30, 100); // 设置相机位置
+  camera.lookAt(0, 30, 0); // 让相机看向场景中心
+
+  // 创建渲染器
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(sceneContainer.value.clientWidth, sceneContainer.value.clientHeight);
+  sceneContainer.value.appendChild(renderer.domElement);
+
+  // 添加环境光
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+  scene.add(ambientLight);
+
+  // 添加网格地面
+  const gridSize = 200;
+  const gridDivisions = 50;
+  const gridHelper = new THREE.GridHelper(gridSize, gridDivisions, 0x444444, 0x444444);
+  gridHelper.position.y = 0; // 将网格地面放在 y=0 的位置
+  scene.add(gridHelper);
+
+  // 烟花系统
+  const fireworks = []; // 存储所有烟花
+
+  // 创建烟花
+  function createFirework() {
+    const particles = 500; // 烟花爆炸后的粒子数量
+    const colors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff]; // 烟花颜色
+
+    // 随机选择一个颜色
+    const color = colors[Math.floor(Math.random() * colors.length)];
+
+    // 创建发射阶段的光束
+    const beamGeometry = new THREE.BufferGeometry();
+    const beamPositions = new Float32Array([0, 0, 0, 0, 1, 0]); // 光束的起点和终点
+    beamGeometry.setAttribute('position', new THREE.BufferAttribute(beamPositions, 3));
+
+    const beamMaterial = new THREE.LineBasicMaterial({ color: color });
+    const beam = new THREE.Line(beamGeometry, beamMaterial);
+    beam.position.set(
+      (Math.random() - 0.5) * 50, // 随机 X 位置
+      0, // 从地面发射
+      (Math.random() - 0.5) * 50 // 随机 Z 位置
+    );
+
+    // 添加到场景
+    scene.add(beam);
+
+    // 烟花对象
+    const firework = {
+      beam: beam,
+      exploded: false, // 是否已经爆炸
+      position: beam.position.clone(), // 烟花的位置
+      color: color,
+      particles: [], // 爆炸后的粒子
+      life: 100, // 烟花生命周期
+    };
+
+    fireworks.push(firework);
+  }
+
+  // 更新烟花
+  function updateFireworks() {
+    for (let i = fireworks.length - 1; i >= 0; i--) {
+      const firework = fireworks[i];
+
+      if (!firework.exploded) {
+        // 发射阶段：光束向上移动
+        firework.position.y += 2; // 发射速度
+
+        // 更新光束的位置
+        firework.beam.position.y = firework.position.y;
+
+        // 到达顶部后爆炸
+        if (firework.position.y >= 50) { // 爆炸高度设置为 50
+          firework.exploded = true;
+
+          // 移除光束
+          scene.remove(firework.beam);
+
+          // 创建爆炸粒子
+          const particles = 500; // 爆炸后的粒子数量
+          const geometry = new THREE.BufferGeometry();
+          const positions = [];
+          const velocities = [];
+          const opacities = [];
+
+          for (let j = 0; j < particles; j++) {
+            const theta = Math.random() * Math.PI * 2; // 随机角度
+            const phi = Math.random() * Math.PI; // 随机角度
+            const speed = Math.random() * 10 + 5; // 随机速度（增大扩散范围）
+
+            // 计算粒子的初始位置和速度
+            const x = Math.sin(phi) * Math.cos(theta) * speed;
+            const y = Math.sin(phi) * Math.sin(theta) * speed;
+            const z = Math.cos(phi) * speed;
+
+            positions.push(x, y, z);
+            velocities.push(x, y, z);
+            opacities.push(1); // 初始透明度
+          }
+
+          geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+          geometry.setAttribute('velocity', new THREE.Float32BufferAttribute(velocities, 3));
+          geometry.setAttribute('opacity', new THREE.Float32BufferAttribute(opacities, 1));
+
+          // 创建粒子材质
+          const material = new THREE.PointsMaterial({
+            color: firework.color,
+            size: 0.2, // 粒子大小
+            transparent: true,
+          });
+
+          // 创建粒子系统
+          const particleSystem = new THREE.Points(geometry, material);
+          particleSystem.position.copy(firework.position); // 设置爆炸位置
+
+          // 添加到场景
+          scene.add(particleSystem);
+
+          // 保存粒子系统
+          firework.particles = particleSystem;
+        }
+      } else {
+        // 爆炸阶段：粒子扩散
+        const particles = firework.particles;
+        const positions = particles.geometry.attributes.position.array;
+        const velocities = particles.geometry.attributes.velocity.array;
+        const opacities = particles.geometry.attributes.opacity.array;
+
+        for (let j = 0; j < positions.length; j += 3) {
+          positions[j] += velocities[j] * 0.1; // 粒子扩散速度
+          positions[j + 1] += velocities[j + 1] * 0.1; // 粒子扩散速度
+          positions[j + 2] += velocities[j + 2] * 0.1; // 粒子扩散速度
+
+          // 重力效果
+          velocities[j + 1] -= 0.02; // 粒子下落
+
+          // 空气阻力
+          velocities[j] *= 0.98;
+          velocities[j + 1] *= 0.98;
+          velocities[j + 2] *= 0.98;
+        }
+
+        // 更新透明度
+        for (let j = 0; j < opacities.length; j++) {
+          opacities[j] -= 0.01; // 逐渐消失
+        }
+
+        // 标记几何体需要更新
+        particles.geometry.attributes.position.needsUpdate = true;
+        particles.geometry.attributes.opacity.needsUpdate = true;
+        particles.material.opacity = Math.max(...opacities); // 更新材质透明度
+
+        // 生命周期减少
+        firework.life -= 1;
+      }
+
+      // 如果烟花生命周期结束，从场景中移除
+      if (firework.life <= 0) {
+        if (firework.exploded) {
+          scene.remove(firework.particles);
+        } else {
+          scene.remove(firework.beam);
+        }
+        fireworks.splice(i, 1);
+      }
+    }
+  }
+
+  // 相机动画
+  let cameraAngle = 0;
+  const cameraRadius = 100; // 相机绕场景旋转的半径
+
+  // 动画循环
+  const animate = () => {
+    requestAnimationFrame(animate);
+
+    // 更新烟花
+    updateFireworks();
+
+    // 随机创建新的烟花
+    if (Math.random() < 0.03) { // 降低烟花生成频率
+      createFirework();
+    }
+
+    // 相机绕场景旋转
+    cameraAngle += 0.002; // 旋转速度（减慢）
+    camera.position.x = Math.sin(cameraAngle) * cameraRadius;
+    camera.position.z = Math.cos(cameraAngle) * cameraRadius;
+    camera.lookAt(0, 30, 0); // 让相机始终看向场景中心
+
+    // 渲染场景
+    renderer.render(scene, camera);
+  };
+
+  animate();
+
+  // 监听窗口大小变化
+  window.addEventListener('resize', () => {
+    const width = sceneContainer.value.clientWidth;
+    const height = sceneContainer.value.clientHeight;
+    renderer.setSize(width, height);
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+  });
 });
 </script>
 
 <style scoped>
-.user-management {
-  padding: 20px;
-  max-width: 1400px; /* 增加最大宽度 */
-  margin: 0 auto;
-}
-
-.page-title {
-  font-size: 24px;
-  color: #333;
-  margin-bottom: 20px;
-}
-
-.search-container {
-  margin-bottom: 20px;
-}
-
-.search-input {
-  width: 300px;
-}
-
-.user-table-card {
-  margin-bottom: 20px;
-}
-
-.expand-content {
-  padding: 10px;
-}
-
-.expand-content p {
-  margin: 5px 0;
-}
-
-.pagination {
-  margin-top: 20px;
-  display: flex;
-  justify-content: center;
-}
-
-.add-user-button {
-  margin-top: 20px;
+.scene-container {
+  width: 100%;
+  height: 100vh;
+  background-color: #000;
 }
 </style>
